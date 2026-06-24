@@ -636,8 +636,10 @@
       { theme: "jungle", boss: false, name: "Jungle" },
       { theme: "jungle", boss: true, bossKind: "ape", name: "White Ape Boss" },
       { theme: "waterslide", boss: false, name: "Water Slide" },
-      { theme: "waterslide", boss: true, bossKind: "hedgehog", name: "Hedgehog Survival", survive: 60 }
+      { theme: "waterslide", boss: true, bossKind: "hedgehog", name: "Hedgehog Survival", survive: 60 },
+      { theme: "racetrack", boss: true, bossKind: "bossRush", name: "Boss Rush" }
     ];
+    const bossRushOrder = ["rushUnicorn", "rushRedTow", "rushPigTow"];
 
     function loadHighScore() {
       try {
@@ -1052,6 +1054,9 @@
         trackTheme: "racetrack",
         bossSpawned: false,
         bossDefeated: false,
+        bossRushIndex: 0,
+        endingBlackoutTimer: 0,
+        pendingWinPlace: 1,
         survivalTimer: 0,
         survivalDuration: 0,
         distance: 0,
@@ -1112,7 +1117,8 @@
           critChance: 0,
           pouchedTimer: 0,
           pouchCooldown: 0,
-          pouchReturnX: laneCenter(1.5)
+          pouchReturnX: laneCenter(1.5),
+          captureReleaseText: ""
         }
       };
       applyLevelConfig(true);
@@ -1133,6 +1139,9 @@
       applyLevelConfig(false);
       state.bossSpawned = false;
       state.bossDefeated = false;
+      state.bossRushIndex = 0;
+      state.endingBlackoutTimer = 0;
+      state.pendingWinPlace = 1;
       state.distance = 0;
       state.upgradePicks = 1;
       state.lastPlace = null;
@@ -1153,6 +1162,7 @@
       state.player.pouchedTimer = 0;
       state.player.pouchCooldown = 0;
       state.player.pouchReturnX = state.player.x;
+      state.player.captureReleaseText = "";
       state.player.boost = state.player.maxBoost;
       state.player.shield = state.player.maxShield;
       state.player.fireCooldown = 0;
@@ -1184,13 +1194,20 @@
         if (state.bossKind === "manateeBoss") return "Level " + state.race + ": manatee boss. It hides in water and fires water bursts.";
         if (state.bossKind === "kangaroo") return "Level " + state.race + ": kangaroo boss. Watch the arm swipe and pouch shake.";
         if (state.bossKind === "hedgehog") return "Level " + state.race + ": hedgehog survival. Dodge the triple shots for 60 seconds.";
+        if (state.bossKind === "bossRush") return "Level " + state.race + ": boss rush. No racers, just you and three huge rival machines.";
         return "Level " + state.race + ": car boss on the racetrack.";
       }
       return "Level " + state.race + ": " + level.name + ". Pass 3 finish lines to advance.";
     }
 
     function update(dt) {
-      if (!state || state.mode !== "race") return;
+      if (!state) return;
+      if (state.mode === "blackoutWin") {
+        state.endingBlackoutTimer = Math.max(0, state.endingBlackoutTimer - dt);
+        if (state.endingBlackoutTimer <= 0) winRun(state.pendingWinPlace || 1);
+        return;
+      }
+      if (state.mode !== "race") return;
       const p = state.player;
       const left = keys.has("ArrowLeft") || keys.has("a") || keys.has("KeyA");
       const right = keys.has("ArrowRight") || keys.has("d") || keys.has("KeyD");
@@ -1256,7 +1273,7 @@
 
     function updatePouchedPlayer(dt) {
       const p = state.player;
-      const captor = state.enemies.find((enemy) => enemy.kind === "kangaroo");
+      const captor = state.enemies.find((enemy) => enemy.kind === "kangaroo" || enemy.kind === "rushRedTow");
       p.pouchedTimer = Math.max(0, p.pouchedTimer - dt);
       p.speed = 0;
       p.vx = 0;
@@ -1270,7 +1287,8 @@
         p.y = 650;
         p.x = clamp(p.pouchReturnX || p.x, roadMinX(p.width), roadMaxX(p.width));
         p.pouchCooldown = 1.4;
-        ui.notice.textContent = "The rider has become a joey, then escaped the pouch.";
+        ui.notice.textContent = p.captureReleaseText || "The rider has become a joey, then escaped the pouch.";
+        p.captureReleaseText = "";
       }
     }
 
@@ -1382,6 +1400,10 @@
       state.bossSpawned = true;
       state.spawnTimer = 999;
       const bossHp = (760 + state.race * 105) * 20 * (state.bossRace && state.race === 2 ? 0.5 : 1);
+      if (state.bossKind === "bossRush") {
+        addBossRushEnemy(bossRushOrder[state.bossRushIndex] || bossRushOrder[0], heat, bossHp * 1.1);
+        return;
+      }
       if (state.bossKind === "ape") {
         state.enemies.push({
           kind: "ape",
@@ -1507,6 +1529,61 @@
       ui.notice.textContent = "Boss incoming: watch for the ground-pound charge.";
     }
 
+    function addBossRushEnemy(kind, heat, hp) {
+      const base = {
+        kind,
+        x: laneCenter(1.5),
+        y: -170,
+        vx: 0,
+        speed: 0,
+        hp,
+        maxHp: hp,
+        fireTimer: 0.65,
+        phaseTimer: 3.8,
+        swayTime: rand(0, Math.PI * 2),
+        swaySpeed: 0.78,
+        scoreValue: 2600 + state.bossRushIndex * 700,
+        scrapValue: 70 + state.bossRushIndex * 18
+      };
+      if (kind === "rushUnicorn") {
+        state.enemies.push({
+          ...base,
+          skin: "tumbleUnicorn",
+          width: 118,
+          height: 128,
+          damage: 24 + heat * 3,
+          color: "#c99a4a"
+        });
+        ui.notice.textContent = "Boss rush 1/3: giant Tumblecorn fires triple horn shots.";
+      } else if (kind === "rushRedTow") {
+        state.enemies.push({
+          ...base,
+          skin: "redTow",
+          width: 112,
+          height: 148,
+          damage: 26 + heat * 3,
+          fireTimer: 0.85,
+          hookTimer: 3,
+          hookWarning: 0,
+          color: "#ff2e24"
+        });
+        ui.notice.textContent = "Boss rush 2/3: Red Hook throws bombs and fires a tow cable.";
+      } else {
+        state.enemies.push({
+          ...base,
+          skin: "pigTow",
+          width: 116,
+          height: 150,
+          damage: 28 + heat * 3,
+          phase: "surface",
+          phaseTimer: 3.5,
+          hideTimer: 0,
+          color: "#d98332"
+        });
+        ui.notice.textContent = "Boss rush 3/3: Piggyback Tow hides like the manatee boss.";
+      }
+    }
+
     function addBossDebris() {
       const radius = rand(14, 22);
       state.hazards.push({
@@ -1528,7 +1605,7 @@
     }
 
     function isBossEnemy(enemy) {
-      return enemy.kind === "boss" || enemy.kind === "kangaroo" || enemy.kind === "ape" || enemy.kind === "manateeBoss" || enemy.kind === "hedgehog";
+      return enemy.kind === "boss" || enemy.kind === "kangaroo" || enemy.kind === "ape" || enemy.kind === "manateeBoss" || enemy.kind === "hedgehog" || enemy.kind === "rushUnicorn" || enemy.kind === "rushRedTow" || enemy.kind === "rushPigTow";
     }
 
     function maybeDropBossScrap(enemy) {
@@ -1565,7 +1642,7 @@
         { name: "Dust RV", color: "#e8dfc6", skin: "rv", width: 62, height: 92 },
         { name: "Red Hook", color: "#ff2e24", skin: "redTow", width: 58, height: 80 }
       ];
-      const count = state.bossRace ? (state.bossKind === "kangaroo" ? 5 : 3) : 5;
+      const count = state.bossKind === "bossRush" ? 0 : state.bossRace ? (state.bossKind === "kangaroo" ? 5 : 3) : 5;
       const slots = Array.from({ length: count }, (_, index) => (index + 1) / (count + 1));
       state.racers = Array.from({ length: count }, (_, index) => {
         const rival = rivals[index % rivals.length];
@@ -1604,9 +1681,8 @@
         const laneDrift = Math.sin((racer.distance + racer.lane * 700) * 0.01) * 34;
         racer.x = clamp(roadX(racer.lane) + laneDrift, roadMinX(racer.width), roadMaxX(racer.width));
         if (racer.hp <= 0) {
-          racer.hp = racer.maxHp;
-          racer.disabled = 2.2;
-          addHit(racer.x, racer.y, "#ffc247");
+          killRacer(racer, false);
+          continue;
         }
         if (racer.disabled <= 0 && racer.fireTimer <= 0) {
           const target = state.enemies.find((enemy) => (isMonster(enemy) || enemy.kind === "manatee" || enemy.kind === "piranha" || enemy.kind === "boss" || enemy.kind === "kangaroo" || enemy.kind === "ape") && enemy.y < racer.y && enemy.y > -140);
@@ -1738,6 +1814,12 @@
           updateManateeBoss(enemy, dt, p);
         } else if (enemy.kind === "hedgehog") {
           updateHedgehogBoss(enemy, dt, p);
+        } else if (enemy.kind === "rushUnicorn") {
+          updateRushUnicornBoss(enemy, dt, p);
+        } else if (enemy.kind === "rushRedTow") {
+          updateRushRedTowBoss(enemy, dt, p);
+        } else if (enemy.kind === "rushPigTow") {
+          updateRushPigTowBoss(enemy, dt, p);
         } else if (enemy.kind === "manatee") {
           updateManatee(enemy, dt, p);
         } else if (enemy.kind === "piranha") {
@@ -1766,17 +1848,21 @@
         }
         enemy.x += enemy.vx * dt;
         enemy.x = clamp(enemy.x, roadMinX(enemy.width), roadMaxX(enemy.width));
-        if ((enemy.kind !== "boss" && enemy.kind !== "kangaroo" && enemy.kind !== "ape" && enemy.kind !== "manateeBoss" && enemy.kind !== "hedgehog") || enemy.phase === "fire" || enemy.phase === "windup") {
+        if ((enemy.kind !== "boss" && enemy.kind !== "kangaroo" && enemy.kind !== "ape" && enemy.kind !== "manateeBoss" && enemy.kind !== "hedgehog" && enemy.kind !== "rushUnicorn" && enemy.kind !== "rushRedTow" && enemy.kind !== "rushPigTow") || enemy.phase === "fire" || enemy.phase === "windup") {
           enemy.y += (state.player.speed - enemy.speed) * dt;
         }
       }
 
       state.enemies = state.enemies.filter((enemy) => {
         if (enemy.hp <= 0) {
-          if (enemy.kind === "boss" || enemy.kind === "kangaroo" || enemy.kind === "ape" || enemy.kind === "manateeBoss") {
-            state.bossDefeated = true;
-            state.distance = state.raceLength;
+          if (isBossEnemy(enemy) && enemy.kind !== "hedgehog") {
             addExplosion(enemy.x, enemy.y, enemy.kind === "kangaroo" ? "#d7a15c" : "#ffcf5b", 44);
+            if (state.bossKind === "bossRush") {
+              advanceBossRush();
+            } else {
+              state.bossDefeated = true;
+              state.distance = state.raceLength;
+            }
           }
           wreckEnemy(enemy);
           if (state.bossRace && state.mode === "race") {
@@ -1788,6 +1874,20 @@
         }
         return enemy.y < canvas.height + 140 && enemy.x > -120 && enemy.x < canvas.width + 120;
       });
+    }
+
+    function advanceBossRush() {
+      state.bossRushIndex += 1;
+      state.bossSpawned = false;
+      state.bossBoostTimer = 1.2;
+      state.bullets = state.bullets.filter((bullet) => bullet.owner === "player");
+      if (state.bossRushIndex >= bossRushOrder.length) {
+        state.bossDefeated = true;
+        state.distance = state.raceLength;
+        ui.notice.textContent = "Boss rush cleared.";
+      } else {
+        ui.notice.textContent = "Boss rush enemy " + (state.bossRushIndex + 1) + "/3 rolling in.";
+      }
     }
 
     function isMonster(enemy) {
@@ -1879,6 +1979,118 @@
         });
         addMuzzle(enemy.x, enemy.y + 20, "#f7f3df");
       }
+    }
+
+    function updateRushUnicornBoss(enemy, dt, player) {
+      enemy.y = Math.min(enemy.y + 170 * dt, 146);
+      updateBossSway(enemy, dt);
+      enemy.fireTimer -= dt;
+      if (enemy.fireTimer <= 0 && enemy.y > 35) {
+        enemy.fireTimer = 0.52;
+        [-38, 0, 38].forEach((offset) => {
+          state.bullets.push({
+            owner: "enemy",
+            kind: "spine",
+            x: enemy.x + offset,
+            y: enemy.y + 36,
+            vx: clamp((player.x - enemy.x) * 0.1 + offset * 0.16, -165, 165),
+            vy: 480,
+            radius: 7,
+            damage: enemy.damage,
+            color: "#ffc247",
+            life: 1.7
+          });
+        });
+        addMuzzle(enemy.x, enemy.y - 22, "#ffc247");
+      }
+    }
+
+    function updateRushRedTowBoss(enemy, dt, player) {
+      enemy.y = Math.min(enemy.y + 160 * dt, 148);
+      updateBossSway(enemy, dt);
+      enemy.fireTimer -= dt;
+      enemy.hookTimer = Math.max(0, (enemy.hookTimer || 0) - dt);
+      enemy.hookWarning = Math.max(0, (enemy.hookWarning || 0) - dt);
+      if (enemy.fireTimer <= 0 && enemy.y > 45) {
+        enemy.fireTimer = 1.05;
+        [-22, 22].forEach((offset) => {
+          state.bullets.push({
+            owner: "enemy",
+            kind: "bomb",
+            x: enemy.x + offset,
+            y: enemy.y + 46,
+            vx: clamp((player.x - enemy.x) * 0.16 + offset * 0.8, -180, 180),
+            vy: 390,
+            radius: 11,
+            damage: enemy.damage,
+            color: "#ff534a",
+            life: 2.1
+          });
+        });
+        addMuzzle(enemy.x, enemy.y + 34, "#ff534a");
+      }
+      if (enemy.hookTimer <= 0) {
+        enemy.hookTimer = 4.1;
+        enemy.hookWarning = 0.9;
+        ui.notice.textContent = "Red Hook is firing its tow cable.";
+      }
+      if (enemy.hookWarning > 0 && enemy.hookWarning < 0.28 && player.pouchedTimer <= 0 && player.pouchCooldown <= 0 && Math.abs(player.x - enemy.x) < 145 && player.y > enemy.y) {
+        capturePlayerWithHook(enemy);
+      }
+    }
+
+    function updateRushPigTowBoss(enemy, dt, player) {
+      enemy.phaseTimer -= dt;
+      enemy.y = Math.min(enemy.y + 150 * dt, 148);
+      updateBossSway(enemy, dt);
+      enemy.fireTimer -= dt;
+      if (enemy.phase === "hide") {
+        enemy.hideTimer = Math.max(0, enemy.hideTimer - dt);
+        if (enemy.phaseTimer <= 0) {
+          enemy.phase = "surface";
+          enemy.phaseTimer = 3.4;
+          enemy.fireTimer = 0.35;
+          ui.notice.textContent = "Piggyback Tow surfaced. The pig is back in the truck.";
+        }
+        return;
+      }
+      if (enemy.fireTimer <= 0 && enemy.y > 50) {
+        enemy.fireTimer = 0.7;
+        state.bullets.push({
+          owner: "enemy",
+          kind: "water",
+          x: enemy.x,
+          y: enemy.y + 34,
+          vx: clamp((player.x - enemy.x) * 0.18, -170, 170),
+          vy: 455,
+          radius: 10,
+          damage: enemy.damage,
+          color: "#4fd3d7",
+          life: 1.8
+        });
+        addMuzzle(enemy.x, enemy.y + 28, "#4fd3d7");
+      }
+      if (enemy.phaseTimer <= 0) {
+        enemy.phase = "hide";
+        enemy.phaseTimer = 2.25;
+        enemy.hideTimer = 2.25;
+        enemy.fireTimer = 999;
+        ui.notice.textContent = "Piggyback Tow is hiding. The pig disappeared.";
+      }
+    }
+
+    function capturePlayerWithHook(enemy) {
+      const p = state.player;
+      p.pouchedTimer = 1.6;
+      p.pouchReturnX = enemy.x;
+      p.captureReleaseText = "The tow hook released your car.";
+      p.speed = 0;
+      p.vx = 0;
+      damagePlayer(12);
+      state.rumble = 9;
+      enemy.hookWarning = 0;
+      ui.notice.textContent = "Red Hook snagged your car.";
+      addHit(enemy.x, enemy.y + 34, "#ff534a");
     }
 
     function updatePiranha(enemy, dt, player) {
@@ -2031,7 +2243,11 @@
 
     function updateKangarooBoss(enemy, dt, player) {
       enemy.phaseTimer -= dt;
-      updateBossSway(enemy, dt);
+      if (enemy.phase === "pouchWarn" || enemy.phase === "pouch") {
+        enemy.vx = 0;
+      } else {
+        updateBossSway(enemy, dt);
+      }
       enemy.y = Math.min(enemy.y + 170 * dt, 145);
       enemy.pouchShakeTimer = Math.max(0, (enemy.pouchShakeTimer || 0) - dt);
 
@@ -2049,16 +2265,27 @@
             vx: clamp((player.x - enemy.x) * 0.55, -180, 180),
             vy: 310,
             radius: 13,
+            hp: 42 + state.heat * 5,
+            maxHp: 42 + state.heat * 5,
             damage: 28 + state.heat * 3,
             color: "#d7a15c",
             life: 2.8
           });
         }
         if (enemy.phaseTimer <= 0) {
-          enemy.phase = "pouch";
-          enemy.phaseTimer = 1.2;
-          enemy.pouchTimer = 1.2;
+          enemy.phase = "pouchWarn";
+          enemy.phaseTimer = 1;
+          enemy.pouchTimer = 1;
           enemy.vx = 0;
+          ui.notice.textContent = "Kangaroo pouch warning: move out of the flashing lane.";
+        }
+      } else if (enemy.phase === "pouchWarn") {
+        enemy.pouchTimer = Math.max(0, enemy.pouchTimer - dt);
+        if (enemy.phaseTimer <= 0) {
+          enemy.phase = "pouch";
+          enemy.phaseTimer = 0.85;
+          enemy.pouchTimer = 0.85;
+          enemy.pouchShakeTimer = 0.35;
           ui.notice.textContent = "Kangaroo pouch swipe: rider has become a joey.";
         }
       } else {
@@ -2071,7 +2298,7 @@
           if (!racer.dead && Math.abs(racer.x - enemy.x) < pouchWidth / 2 && racer.y > enemy.y && racer.y < canvas.height + 220) {
             killRacer(racer, true);
             enemy.hp = Math.min(enemy.maxHp, enemy.hp + 95);
-            addHit(enemy.x, enemy.y + 20, "#8ae05f");
+            addHit(enemy.x, enemy.y + 20, "#ffc247");
           }
         }
         if (enemy.phaseTimer <= 0) {
@@ -2093,7 +2320,7 @@
       state.rumble = 8;
       enemy.pouchShakeTimer = 0.65;
       ui.notice.textContent = "The rider has become a joey.";
-      addHit(enemy.x, enemy.y + 20, "#8ae05f");
+      addHit(enemy.x, enemy.y + 20, "#ffc247");
     }
 
     function killRacer(racer, pouched = false) {
@@ -2110,7 +2337,7 @@
           vy: rand(-130, 60),
           life: rand(0.25, 0.65),
           size: rand(3, 7),
-          color: pouched ? "#8ae05f" : "#ffc247"
+          color: pouched ? "#ffc247" : "#ffc247"
         });
       }
     }
@@ -2122,10 +2349,27 @@
         b.life -= dt;
         if (b.owner === "player" || b.owner === "racer") {
           if (b.owner === "player") {
+          for (const target of state.bullets) {
+            if (target.kind === "joey" && target.life > 0 && rectCircleHit({ x: target.x, y: target.y, width: target.radius * 2, height: target.radius * 2 }, b)) {
+              target.hp -= b.damage;
+              b.hit += 1;
+              addHit(target.x, target.y, "#ffc247");
+              if (!b.pierce || b.hit > 1) b.life = 0;
+              if (target.hp <= 0) {
+                target.life = 0;
+                target.exploded = true;
+                if (target.parent) target.parent.joeyActive = false;
+                addExplosion(target.x, target.y, "#d7a15c", 16);
+              }
+              break;
+            }
+          }
+          if (b.life <= 0) continue;
           for (const racer of state.racers) {
-            if (racer.y > -120 && racer.y < canvas.height + 120 && rectCircleHit(racer, b)) {
+            if (!racer.dead && racer.y > -120 && racer.y < canvas.height + 120 && rectCircleHit(racer, b)) {
               racer.hp -= b.damage;
               racer.disabled = Math.max(racer.disabled, 0.55);
+              if (racer.hp <= 0) killRacer(racer, false);
               b.life = 0;
               addHit(racer.x, racer.y, "#ffc247");
               break;
@@ -2136,7 +2380,7 @@
           for (const enemy of state.enemies) {
             if (rectCircleHit(enemy, b)) {
               if (!enemy.invulnerable) {
-                enemy.hp -= enemy.kind === "manateeBoss" && enemy.phase === "hide" ? b.damage * 0.12 : b.damage;
+                enemy.hp -= (enemy.kind === "manateeBoss" || enemy.kind === "rushPigTow") && enemy.phase === "hide" ? b.damage * 0.12 : b.damage;
               }
               if (isBossEnemy(enemy)) maybeDropBossScrap(enemy);
               b.hit += 1;
@@ -2226,7 +2470,7 @@
         }
       }
       for (const racer of state.racers) {
-        if (racer.y > -90 && racer.y < canvas.height + 90 && rectHit(p, racer)) {
+        if (!racer.dead && racer.y > -90 && racer.y < canvas.height + 90 && rectHit(p, racer)) {
           racer.disabled = Math.max(racer.disabled, 0.9);
           p.speed *= 0.84;
           p.vx += Math.sign(p.x - racer.x || 1) * 90;
@@ -2308,8 +2552,8 @@
     function finishRace() {
       if (state.mode !== "race") return;
       const survivalWin = state.bossKind === "hedgehog" && state.survivalTimer <= 0;
-      const place = survivalWin ? 1 : getPlayerPlace();
-      if (place > state.racers.length) {
+      const place = state.bossRace || survivalWin ? 1 : getPlayerPlace();
+      if (!state.bossRace && place > state.racers.length) {
         state.player.hp = 0;
         state.rumble = 18;
         endRun("You finished last and your rig detonated at the line.");
@@ -2322,7 +2566,7 @@
       state.score += Math.max(0, state.race) * 500 + Math.ceil(state.player.hp) * 4;
       recordHighScore();
       if (state.race >= levelRoute.length) {
-        winRun(place);
+        startBlackoutWin(place);
         return;
       }
       state.player.hp = Math.min(state.player.maxHp, state.player.hp + 18 + state.raceKills * 2);
@@ -2353,8 +2597,18 @@
       state.lastPlace = place;
       recordHighScore();
       ui.gameOverTitle.textContent = "You Win";
-      ui.gameOverCopy.textContent = "You cleared all " + levelRoute.length + " levels, survived the hedgehog water-slide finale, scored " + state.score + ", destroyed " + state.totalKills + " enemies, and drove out with " + state.scrap + " scrap.";
+      ui.gameOverCopy.textContent = "You cleared all " + levelRoute.length + " levels, survived the water-slide finale, conquered the racetrack boss rush, scored " + state.score + ", destroyed " + state.totalKills + " enemies, and drove out with " + state.scrap + " scrap.";
       ui.gameOverOverlay.classList.remove("hidden");
+    }
+
+    function startBlackoutWin(place) {
+      state.mode = "blackoutWin";
+      state.pendingWinPlace = place;
+      state.lastPlace = place;
+      state.endingBlackoutTimer = 1.7;
+      state.rumble = 0;
+      hideAllOverlays();
+      playEndingScreech();
     }
 
     function updateScore() {
@@ -2402,6 +2656,12 @@
     }
 
     function render() {
+      if (state && state.mode === "blackoutWin") {
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        requestAnimationFrame(tick);
+        return;
+      }
       const shakeX = rand(-state?.rumble || 0, state?.rumble || 0);
       const shakeY = rand(-state?.rumble || 0, state?.rumble || 0);
       ctx.save();
@@ -2783,6 +3043,8 @@
         drawManateeBoss(enemy);
       } else if (enemy.kind === "hedgehog") {
         drawHedgehogBoss(enemy);
+      } else if (enemy.kind === "rushUnicorn" || enemy.kind === "rushRedTow" || enemy.kind === "rushPigTow") {
+        drawRushRacerBoss(enemy);
       } else if (enemy.kind === "manatee") {
         drawManatee(enemy);
       } else if (enemy.kind === "piranha") {
@@ -2795,7 +3057,7 @@
       if (enemy.phase === "windup") drawSlamWarning(enemy);
       if (enemy.kind !== "hedgehog") {
         const pct = clamp(enemy.hp / enemy.maxHp, 0, 1);
-        drawHealthBar(enemy.x, enemy.y - enemy.height / 2 - 13, enemy.kind === "boss" || enemy.kind === "kangaroo" || enemy.kind === "ape" || enemy.kind === "manateeBoss" ? 132 : 52, pct, isMonster(enemy) || enemy.kind === "kangaroo" ? "#8ae05f" : enemy.kind === "ape" || enemy.kind === "manateeBoss" ? "#bfefff" : enemy.kind === "boss" ? "#ffcf5b" : "#ff665a");
+        drawHealthBar(enemy.x, enemy.y - enemy.height / 2 - 13, isBossEnemy(enemy) ? 132 : 52, pct, isMonster(enemy) ? "#8ae05f" : enemy.kind === "kangaroo" || enemy.kind === "boss" || enemy.kind === "rushUnicorn" ? "#ffcf5b" : enemy.kind === "ape" || enemy.kind === "manateeBoss" || enemy.kind === "rushPigTow" ? "#bfefff" : "#ff665a");
       }
     }
 
@@ -2864,9 +3126,11 @@
       } else if (racer.skin === "pigTow" || racer.skin === "redTow") {
         const red = racer.skin === "redTow";
         drawCar(0, 0, racer.width, racer.height, faded ? "#8f8f83" : racer.color, "#211411", false, true);
-        ctx.fillStyle = red ? "#f7f3df" : "#ffb6bd";
-        ctx.fillRect(-18, 11, 36, 20);
-        if (!red) {
+        if (red || !racer.hidePig) {
+          ctx.fillStyle = red ? "#f7f3df" : "#ffb6bd";
+          ctx.fillRect(-18, 11, 36, 20);
+        }
+        if (!red && !racer.hidePig) {
           ctx.beginPath();
           ctx.ellipse(0, 4, 15, 11, 0, 0, Math.PI * 2);
           ctx.fill();
@@ -2928,6 +3192,8 @@
 
     function drawKangarooBoss(enemy) {
       const p = projectPoint(enemy.x, enemy.y);
+      const pouchOpen = enemy.phase === "pouch" || enemy.phase === "pouchWarn";
+      const pouchWarn = enemy.phase === "pouchWarn";
       const pouchShake = enemy.pouchShakeTimer > 0 ? Math.sin(performance.now() * 0.07) * 5 : 0;
       ctx.save();
       ctx.translate(p.x, p.y);
@@ -2984,7 +3250,7 @@
       ctx.strokeStyle = "#2f1b16";
       ctx.lineWidth = 3;
       ctx.beginPath();
-      if (enemy.phase === "pouch") {
+      if (pouchOpen) {
         ctx.moveTo(-35, -13);
         ctx.quadraticCurveTo(-95, 4 + pouchShake, -120, 40);
         ctx.moveTo(38, -13);
@@ -3000,22 +3266,22 @@
       }
       ctx.stroke();
       ctx.fillStyle = "#f7f3df";
-      ctx.fillRect(enemy.phase === "pouch" ? -126 : -68, enemy.phase === "pouch" ? 38 + pouchShake : 35, 16, 6);
+      ctx.fillRect(pouchOpen ? -126 : -68, pouchOpen ? 38 + pouchShake : 35, 16, 6);
       ctx.fillRect(52, 35, 16, 6);
       ctx.fillStyle = "#7c3f24";
       ctx.fillRect(-36, 42, 18, 56);
       ctx.fillRect(18, 42, 18, 56);
       ctx.fillStyle = "#d7a15c";
       ctx.beginPath();
-      ctx.ellipse(pouchShake, 12, enemy.phase === "pouch" ? 34 : 22, enemy.phase === "pouch" ? 36 : 22, 0, 0, Math.PI * 2);
+      ctx.ellipse(pouchShake, 12, pouchOpen ? 34 : 22, pouchOpen ? 36 : 22, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = enemy.phase === "pouch" || enemy.pouchShakeTimer > 0 ? "#8ae05f" : "#7c3f24";
+      ctx.strokeStyle = pouchOpen || enemy.pouchShakeTimer > 0 ? "#ffc247" : "#7c3f24";
       ctx.lineWidth = 5;
       ctx.beginPath();
-      ctx.ellipse(pouchShake, 12, enemy.phase === "pouch" ? 37 : 23, enemy.phase === "pouch" ? 38 : 23, 0, 0, Math.PI * 2);
+      ctx.ellipse(pouchShake, 12, pouchOpen ? 37 : 23, pouchOpen ? 38 : 23, 0, 0, Math.PI * 2);
       ctx.stroke();
       if (enemy.pouchShakeTimer > 0) {
-        ctx.strokeStyle = "rgba(138,224,95,0.75)";
+        ctx.strokeStyle = "rgba(255,194,71,0.75)";
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.arc(pouchShake, 12, 45, -0.6, 0.6);
@@ -3031,15 +3297,15 @@
       ctx.fillRect(-30, -4, 60, 7);
       ctx.fillStyle = "#46301f";
       ctx.fillRect(-7, -8, 14, 15);
-      if (enemy.phase === "pouch") {
+      if (pouchOpen) {
         ctx.restore();
         const p1 = projectPoint(enemy.x - 174, enemy.y + 34);
         const p2 = projectPoint(enemy.x + 52, enemy.y + 18);
         const p3 = projectPoint(enemy.x + 88, canvas.height + 120);
         const p4 = projectPoint(enemy.x - 210, canvas.height + 120);
         ctx.save();
-        ctx.globalAlpha = 0.34;
-        fillQuad([p1, p2, p3, p4], "#ffc247");
+        ctx.globalAlpha = pouchWarn ? 0.14 + (Math.sin(performance.now() * 0.04) > 0 ? 0.34 : 0.04) : 0.34;
+        fillQuad([p1, p2, p3, p4], pouchWarn ? "#ff534a" : "#ffc247");
         ctx.globalAlpha = 1;
         return ctx.restore();
       }
@@ -3338,22 +3604,40 @@
       ctx.ellipse(4, 44, 78, 22, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "#5c4b3c";
-      for (let i = -5; i <= 5; i++) {
+      for (let i = -7; i <= 7; i++) {
         ctx.beginPath();
-        ctx.moveTo(i * 13, -28 - Math.abs(i) * 2);
-        ctx.lineTo(i * 13 + (i % 2 ? 8 : -8), -78 - Math.abs(i) * 4);
-        ctx.lineTo(i * 13 + (i % 2 ? 15 : -15), -24);
+        ctx.moveTo(i * 10, -24 - Math.abs(i) * 1.5);
+        ctx.lineTo(i * 10 + (i % 2 ? 8 : -8), -76 - Math.abs(i) * 3);
+        ctx.lineTo(i * 10 + (i % 2 ? 15 : -15), -20);
         ctx.closePath();
         ctx.fill();
+      }
+      ctx.strokeStyle = "#35291f";
+      ctx.lineWidth = 3;
+      for (let i = -6; i <= 6; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * 11, -15);
+        ctx.lineTo(i * 11 + (i % 2 ? 13 : -13), -58 - Math.abs(i) * 2);
+        ctx.stroke();
       }
       ctx.fillStyle = "#d7d0bf";
       ctx.beginPath();
       ctx.ellipse(0, 6, 58, 46, 0, 0, Math.PI * 2);
       ctx.ellipse(0, -36, 38, 29, 0, 0, Math.PI * 2);
       ctx.fill();
+      ctx.strokeStyle = "#8d806e";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.ellipse(0, 6, 62, 49, 0, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.fillStyle = "#f7f3df";
       ctx.beginPath();
       ctx.ellipse(0, -12, 42, 29, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#d9b58d";
+      ctx.beginPath();
+      ctx.arc(-28, -36, 11, 0, Math.PI * 2);
+      ctx.arc(28, -36, 11, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "#1a1110";
       ctx.beginPath();
@@ -3361,6 +3645,14 @@
       ctx.arc(15, -42, 4, 0, Math.PI * 2);
       ctx.ellipse(0, -30, 7, 5, 0, 0, Math.PI * 2);
       ctx.fill();
+      ctx.strokeStyle = "#1a1110";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, -21, 15, 0.15, Math.PI - 0.15);
+      ctx.stroke();
+      ctx.fillStyle = "#f7f3df";
+      ctx.fillRect(-12, -18, 6, 9);
+      ctx.fillRect(6, -18, 6, 9);
       ctx.strokeStyle = "#7c5b3a";
       ctx.lineWidth = 4;
       ctx.beginPath();
@@ -3383,6 +3675,57 @@
       ctx.arc(0, 46, 23, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+
+    function drawRushRacerBoss(enemy) {
+      const bossRacer = {
+        x: enemy.x,
+        y: enemy.y,
+        width: enemy.width,
+        height: enemy.height,
+        hp: enemy.hp,
+        maxHp: enemy.maxHp,
+        disabled: enemy.phase === "hide" ? 1 : 0,
+        color: enemy.color,
+        skin: enemy.skin
+        ,
+        hidePig: enemy.kind === "rushPigTow" && enemy.phase === "hide"
+      };
+      drawRacerSkin(bossRacer);
+      const p = projectPoint(enemy.x, enemy.y);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.scale(p.scale, p.scale);
+      if (enemy.kind === "rushUnicorn") {
+        ctx.strokeStyle = "#ffc247";
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(0, -44, 45 + Math.sin(performance.now() * 0.015) * 4, -0.2, Math.PI + 0.2);
+        ctx.stroke();
+      } else if (enemy.kind === "rushRedTow") {
+        if (enemy.hookWarning > 0) {
+          ctx.strokeStyle = "rgba(255,83,74,0.78)";
+          ctx.lineWidth = 5;
+          ctx.setLineDash([12, 8]);
+          ctx.beginPath();
+          ctx.moveTo(0, 38);
+          ctx.lineTo(0, canvas.height);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ctx.fillStyle = "#15191a";
+        ctx.fillRect(-44, 44, 88, 14);
+        ctx.fillStyle = "#ffc247";
+        ctx.fillRect(-36, 47, 72, 5);
+      } else if (enemy.kind === "rushPigTow") {
+        ctx.globalAlpha = enemy.phase === "hide" ? 0.28 : 0.6;
+        ctx.fillStyle = "#4fd3d7";
+        ctx.beginPath();
+        ctx.ellipse(0, 42, 78, 22, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
       ctx.restore();
     }
 
@@ -3488,7 +3831,11 @@
     }
 
     function drawBullet(b) {
-      if (b.kind === "joey") return drawJoeyBomb(b);
+      if (b.kind === "joey") {
+        drawJoeyBomb(b);
+        if (b.maxHp) drawHealthBar(b.x, b.y - 24, 36, clamp(b.hp / b.maxHp, 0, 1), "#ffc247");
+        return;
+      }
       const p = projectPoint(b.x, b.y);
       const tail = projectPoint(b.x - b.vx * 0.035, b.y - b.vy * 0.035);
       if (b.kind === "beam") {
@@ -3756,6 +4103,37 @@
       ui.musicBtn.textContent = "Music";
     }
 
+    function playEndingScreech() {
+      if (!musicEnabled || !window.AudioContext && !window.webkitAudioContext) return;
+      const context = audio?.context || new (window.AudioContext || window.webkitAudioContext)();
+      const destination = audio?.master || context.destination;
+      const now = context.currentTime;
+      const osc = context.createOscillator();
+      const grind = context.createOscillator();
+      const gain = context.createGain();
+      const filter = context.createBiquadFilter();
+      osc.type = "sawtooth";
+      grind.type = "square";
+      osc.frequency.setValueAtTime(1800, now);
+      osc.frequency.exponentialRampToValueAtTime(260, now + 1.2);
+      grind.frequency.setValueAtTime(93, now);
+      filter.type = "bandpass";
+      filter.frequency.setValueAtTime(2200, now);
+      filter.frequency.exponentialRampToValueAtTime(480, now + 1.25);
+      filter.Q.value = 9;
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.28, now + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.35);
+      osc.connect(filter);
+      grind.connect(filter);
+      filter.connect(gain);
+      gain.connect(destination);
+      osc.start(now);
+      grind.start(now);
+      osc.stop(now + 1.45);
+      grind.stop(now + 1.45);
+    }
+
     function playMusicStep() {
       if (!audio) return;
       const { context, master } = audio;
@@ -3972,6 +4350,22 @@
           snareGain: 0.11,
           hatGain: 0.065,
           hats: true
+        },
+        "boss-bossRush": {
+          bass: [73.42, 98, 110, 98, 87.31, 123.47, 110, 98],
+          lead: [293.66, 349.23, 392, 0, 440, 392, 349.23, 293.66, 523.25, 0, 493.88, 440, 392, 349.23, 293.66, 0],
+          chords: [146.83, 196, 220, 174.61],
+          sparkle: [587.33, 698.46, 783.99, 880],
+          leadWave: "sawtooth",
+          urgency: 1.5,
+          bassGain: 0.35,
+          subGain: 0.085,
+          chordGain: 0.065,
+          leadGain: 0.135,
+          kickGain: 0.15,
+          snareGain: 0.115,
+          hatGain: 0.07,
+          hats: true
         }
       };
       if (mode !== "race") return themes[mode];
@@ -4054,7 +4448,7 @@
       const board = loadHighScoreBoard();
       ui.highScoreText.textContent = "High score: " + state.highScore + (board.length ? " | Board: " + board.join(" / ") : "");
       ui.scoreFill.style.width = clamp(state.score / Math.max(1, state.highScore) * 100, 0, 100) + "%";
-      ui.objectiveText.textContent = state.bossKind === "hedgehog" ? "Survive " + Math.ceil(state.survivalTimer) + "s" : "Place " + getPlayerPlace() + " | " + Math.ceil(Math.max(0, state.raceLength - state.distance)) + "m";
+      ui.objectiveText.textContent = state.bossKind === "hedgehog" ? "Survive " + Math.ceil(state.survivalTimer) + "s" : state.bossRace ? "Boss level | " + Math.ceil(Math.max(0, state.raceLength - state.distance)) + "m" : "Place " + getPlayerPlace() + " | " + Math.ceil(Math.max(0, state.raceLength - state.distance)) + "m";
     }
 
     function rectHit(a, b) {
