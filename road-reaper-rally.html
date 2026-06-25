@@ -638,7 +638,8 @@
       { theme: "jungle", boss: true, bossKind: "ape", name: "White Ape Boss" },
       { theme: "waterslide", boss: false, name: "Water Slide" },
       { theme: "waterslide", boss: true, bossKind: "hedgehog", name: "Hedgehog Survival", survive: 60 },
-      { theme: "racetrack", boss: true, bossKind: "bossRush", name: "Boss Rush" }
+      { theme: "racetrack", boss: true, bossKind: "bossRush", name: "Boss Rush" },
+      { theme: "darkcave", boss: true, bossKind: "centipede", name: "Scholopendra" }
     ];
     const bossRushOrder = ["rushUnicorn", "rushRedTow", "rushPigTow"];
     const endlessBossOrder = ["boss", "manateeBoss", "kangaroo", "ape", "rushUnicorn", "rushRedTow", "rushPigTow", "pigBall"];
@@ -1062,6 +1063,7 @@
         heat: practice ? 0.7 : 1,
         endlessMode: endless,
         endlessBossesDefeated: 0,
+        endlessRecentBosses: [],
         bossRace: false,
         bossKind: "car",
         trackTheme: "racetrack",
@@ -1070,6 +1072,7 @@
         bossRushIndex: 0,
         endingBlackoutTimer: 0,
         pendingWinPlace: 1,
+        pendingNextRace: false,
         survivalTimer: 0,
         survivalDuration: 0,
         distance: 0,
@@ -1171,6 +1174,7 @@
       state.bossRushIndex = 0;
       state.endingBlackoutTimer = 0;
       state.pendingWinPlace = 1;
+      state.pendingNextRace = false;
       state.distance = 0;
       state.upgradePicks = 1;
       state.lastPlace = null;
@@ -1207,7 +1211,8 @@
 
     function applyLevelConfig(initial) {
       if (state.endlessMode) {
-        const kind = endlessBossOrder[Math.floor(rand(0, endlessBossOrder.length))];
+        const kind = chooseEndlessBossKind();
+        tickEndlessBossPenalties();
         state.bossRace = true;
         state.bossKind = kind;
         state.trackTheme = kind === "pigBall" ? "redcave" : kind === "manateeBoss" || kind === "rushPigTow" ? "cave" : kind === "kangaroo" ? "desert" : kind === "ape" ? "jungle" : "racetrack";
@@ -1227,6 +1232,34 @@
       state.raceLength = state.lapLength * 3;
     }
 
+    function chooseEndlessBossKind() {
+      const recent = state.endlessRecentBosses || [];
+      const weights = endlessBossOrder.map((kind) => {
+        const penalty = recent.find((entry) => entry.kind === kind);
+        return penalty ? 0.25 : 1;
+      });
+      const total = weights.reduce((sum, weight) => sum + weight, 0);
+      let roll = rand(0, total);
+      for (let i = 0; i < endlessBossOrder.length; i++) {
+        roll -= weights[i];
+        if (roll <= 0) return endlessBossOrder[i];
+      }
+      return endlessBossOrder[endlessBossOrder.length - 1];
+    }
+
+    function tickEndlessBossPenalties() {
+      state.endlessRecentBosses = (state.endlessRecentBosses || [])
+        .map((entry) => ({ kind: entry.kind, rounds: entry.rounds - 1 }))
+        .filter((entry) => entry.rounds > 0);
+    }
+
+    function rememberEndlessBoss(kind) {
+      if (!state.endlessRecentBosses) state.endlessRecentBosses = [];
+      const existing = state.endlessRecentBosses.find((entry) => entry.kind === kind);
+      if (existing) existing.rounds = 2;
+      else state.endlessRecentBosses.push({ kind, rounds: 2 });
+    }
+
     function getLevelNotice() {
       const level = getLevelConfig();
       if (state.bossRace) {
@@ -1236,6 +1269,7 @@
         if (state.bossKind === "kangaroo") return "Level " + state.race + ": kangaroo boss. Watch the arm swipe and pouch shake.";
         if (state.bossKind === "hedgehog") return "Level " + state.race + ": hedgehog survival. Dodge the triple shots for 60 seconds.";
         if (state.bossKind === "bossRush") return "Level " + state.race + ": boss rush. No racers, just you and three huge rival machines.";
+        if (state.bossKind === "centipede") return "Level " + state.race + ": Scholopendra finale. Survive the dark-cave spray.";
         return "Level " + state.race + ": car boss on the racetrack.";
       }
       return "Level " + state.race + ": " + level.name + ". Pass 3 finish lines to advance.";
@@ -1246,6 +1280,11 @@
       if (state.mode === "blackoutWin") {
         state.endingBlackoutTimer = Math.max(0, state.endingBlackoutTimer - dt);
         if (state.endingBlackoutTimer <= 0) winRun(state.pendingWinPlace || 1);
+        return;
+      }
+      if (state.mode === "blackoutNextLevel") {
+        state.endingBlackoutTimer = Math.max(0, state.endingBlackoutTimer - dt);
+        if (state.endingBlackoutTimer <= 0) startNextRace();
         return;
       }
       if (state.mode !== "race") return;
@@ -1461,11 +1500,11 @@
           height: 136,
           hp: bossHp * 0.85,
           maxHp: bossHp * 0.85,
-          damage: 34 + heat * 4,
+          damage: 20 + heat * 2,
           phase: "windup",
-          phaseTimer: 1.2,
+          phaseTimer: 2.4,
           fireTimer: 999,
-          chargeWarning: 1.2,
+          chargeWarning: 2.4,
           color: "#ff9aa8",
           swayTime: rand(0, Math.PI * 2),
           swaySpeed: 0.62,
@@ -1473,6 +1512,32 @@
           scrapValue: 84 + state.endlessBossesDefeated * 5
         });
         ui.notice.textContent = "Infinite boss: a ball of pig heads is charging.";
+        return;
+      }
+      if (state.bossKind === "centipede") {
+        state.enemies.push({
+          kind: "centipede",
+          x: laneCenter(1.5),
+          y: -190,
+          vx: 0,
+          speed: 0,
+          width: 168,
+          height: 210,
+          hp: bossHp * 1.25,
+          maxHp: bossHp * 1.25,
+          damage: 20 + heat * 2,
+          fireTimer: 0.7,
+          phase: "spray",
+          phaseTimer: 4.4,
+          secondPhase: false,
+          ramWarning: 0,
+          color: "#6b3d21",
+          swayTime: rand(0, Math.PI * 2),
+          swaySpeed: 0.7,
+          scoreValue: 3600 + state.race * 220,
+          scrapValue: 96 + state.race * 5
+        });
+        ui.notice.textContent = "Final boss: Scholopendra floods the dark cave.";
         return;
       }
       if (state.bossKind === "ape") {
@@ -1676,7 +1741,7 @@
     }
 
     function isBossEnemy(enemy) {
-      return enemy.kind === "boss" || enemy.kind === "kangaroo" || enemy.kind === "ape" || enemy.kind === "manateeBoss" || enemy.kind === "hedgehog" || enemy.kind === "rushUnicorn" || enemy.kind === "rushRedTow" || enemy.kind === "rushPigTow" || enemy.kind === "pigBall";
+      return enemy.kind === "boss" || enemy.kind === "kangaroo" || enemy.kind === "ape" || enemy.kind === "manateeBoss" || enemy.kind === "hedgehog" || enemy.kind === "rushUnicorn" || enemy.kind === "rushRedTow" || enemy.kind === "rushPigTow" || enemy.kind === "pigBall" || enemy.kind === "centipede";
     }
 
     function maybeDropBossScrap(enemy) {
@@ -1713,7 +1778,7 @@
         { name: "Dust RV", color: "#e8dfc6", skin: "rv", width: 62, height: 92 },
         { name: "Red Hook", color: "#ff2e24", skin: "redTow", width: 58, height: 80 }
       ];
-      const count = state.bossKind === "bossRush" ? 0 : state.bossRace ? (state.bossKind === "kangaroo" ? 5 : 3) : 5;
+      const count = state.bossKind === "bossRush" || state.bossKind === "centipede" ? 0 : state.bossRace ? (state.bossKind === "kangaroo" ? 5 : 3) : 5;
       const slots = Array.from({ length: count }, (_, index) => (index + 1) / (count + 1));
       state.racers = Array.from({ length: count }, (_, index) => {
         const rival = rivals[index % rivals.length];
@@ -1893,6 +1958,8 @@
           updateRushPigTowBoss(enemy, dt, p);
         } else if (enemy.kind === "pigBall") {
           updatePigBallBoss(enemy, dt, p);
+        } else if (enemy.kind === "centipede") {
+          updateCentipedeBoss(enemy, dt, p);
         } else if (enemy.kind === "manatee") {
           updateManatee(enemy, dt, p);
         } else if (enemy.kind === "piranha") {
@@ -1921,13 +1988,18 @@
         }
         enemy.x += enemy.vx * dt;
         enemy.x = clamp(enemy.x, roadMinX(enemy.width), roadMaxX(enemy.width));
-        if ((enemy.kind !== "boss" && enemy.kind !== "kangaroo" && enemy.kind !== "ape" && enemy.kind !== "manateeBoss" && enemy.kind !== "hedgehog" && enemy.kind !== "rushUnicorn" && enemy.kind !== "rushRedTow" && enemy.kind !== "rushPigTow" && enemy.kind !== "pigBall") || enemy.phase === "fire" || enemy.phase === "windup") {
+        if ((enemy.kind !== "boss" && enemy.kind !== "kangaroo" && enemy.kind !== "ape" && enemy.kind !== "manateeBoss" && enemy.kind !== "hedgehog" && enemy.kind !== "rushUnicorn" && enemy.kind !== "rushRedTow" && enemy.kind !== "rushPigTow" && enemy.kind !== "pigBall" && enemy.kind !== "centipede") || enemy.phase === "fire" || enemy.phase === "windup") {
           enemy.y += (state.player.speed - enemy.speed) * dt;
         }
       }
 
       state.enemies = state.enemies.filter((enemy) => {
         if (enemy.hp <= 0) {
+          if (enemy.kind === "centipede" && !enemy.thirdPhase) {
+            if (!enemy.secondPhase) triggerScholopendraSecondPhase(enemy);
+            else triggerScholopendraThirdPhase(enemy);
+            return true;
+          }
           if (isBossEnemy(enemy) && enemy.kind !== "hedgehog") {
             addExplosion(enemy.x, enemy.y, enemy.kind === "kangaroo" ? "#d7a15c" : "#ffcf5b", 44);
             if (state.bossKind === "bossRush") {
@@ -1945,7 +2017,7 @@
           }
           return false;
         }
-        return enemy.y < canvas.height + 140 && enemy.x > -120 && enemy.x < canvas.width + 120;
+        return (enemy.kind === "centipede" || enemy.y < canvas.height + 140) && enemy.x > -120 && enemy.x < canvas.width + 120;
       });
     }
 
@@ -2028,6 +2100,142 @@
         enemy.fireTimer = 999;
         ui.notice.textContent = "Manatee boss dove underwater. Its hide is defended.";
       }
+    }
+
+    function updateCentipedeBoss(enemy, dt, player) {
+      enemy.phaseTimer -= dt;
+      if (enemy.secondPhase && enemy.phase === "ramWindup") {
+        enemy.y = Math.min(enemy.y + 180 * dt, 118);
+        enemy.ramWarning = Math.max(0, enemy.phaseTimer);
+        enemy.x += clamp(player.x - enemy.x, -260 * dt, 260 * dt);
+      } else if (enemy.secondPhase && enemy.phase === "ram") {
+        enemy.y += 720 * dt;
+        enemy.vx = 0;
+        if (enemy.y > canvas.height + 190) {
+          enemy.phase = "return";
+          enemy.phaseTimer = 9;
+          enemy.y = -230;
+          enemy.speed = 0;
+          enemy.x = clamp(player.x + rand(-90, 90), roadMinX(enemy.width), roadMaxX(enemy.width));
+          enemy.ramWarning = 0;
+        }
+      } else if (enemy.secondPhase && enemy.phase === "return") {
+        enemy.y = Math.min(enemy.y + 360 * dt, 146);
+        updateBossSway(enemy, dt);
+        if (enemy.y >= 146) {
+          enemy.y = 146;
+          enemy.phase = "spray";
+          enemy.phaseTimer = 2.6;
+          enemy.fireTimer = 0.24;
+          ui.notice.textContent = "Scholopendra rises for another volley.";
+        }
+      } else {
+        enemy.y = Math.min(enemy.y + 150 * dt, 146);
+        updateBossSway(enemy, dt);
+      }
+      enemy.fireTimer -= dt;
+      if (enemy.secondPhase) {
+        enemy.bombTimer = Math.max(0, (enemy.bombTimer || 1.7) - dt);
+        if (enemy.thirdPhase && enemy.bombTimer <= 0 && enemy.y > 30 && enemy.phase !== "return") {
+          enemy.bombTimer = rand(1.45, 2.15);
+          fireCentipedeBomb(enemy, player);
+        }
+        if (enemy.phase === "ramWindup" && enemy.phaseTimer <= 0) {
+          enemy.phase = "ram";
+          enemy.phaseTimer = 1.4;
+          enemy.ramWarning = 0;
+          enemy.speed = 620;
+          ui.notice.textContent = "Scholopendra lunges down the lane.";
+        }
+        if (enemy.phase === "ram" || enemy.phase === "return") return;
+      }
+      if (enemy.fireTimer <= 0 && enemy.y > 45) {
+        enemy.fireTimer = enemy.thirdPhase ? 0.34 : enemy.secondPhase ? 0.42 : enemy.phaseTimer < 1.1 ? 0.36 : 0.68;
+        [-24, 0, 24].forEach((offset, index) => {
+          state.bullets.push({
+            owner: "enemy",
+            kind: enemy.secondPhase ? "spine" : "water",
+            x: enemy.x + offset,
+            y: enemy.y + 42 + index * 6,
+            vx: clamp((player.x - enemy.x) * 0.16 + offset * 1.5, -190, 190),
+            vy: enemy.secondPhase ? 500 + index * 24 : 470 + index * 18,
+            radius: index === 1 ? 11 : 8,
+            damage: enemy.damage,
+            color: enemy.secondPhase ? (index === 1 ? "#f0b45b" : "#8b4a24") : (index === 1 ? "#8f7cff" : "#4fd3d7"),
+            life: 1.85
+          });
+        });
+        addMuzzle(enemy.x, enemy.y + 38, enemy.secondPhase ? "#f0b45b" : "#8f7cff");
+      }
+      if (enemy.phaseTimer <= 0) {
+        if (enemy.secondPhase) {
+          enemy.phase = "ramWindup";
+          enemy.phaseTimer = 1.05;
+          enemy.ramWarning = 1.05;
+          enemy.fireTimer = 0.36;
+          enemy.speed = 0;
+          ui.notice.textContent = "Scholopendra lines up a ramming charge.";
+          return;
+        }
+        enemy.phaseTimer = 4.2;
+        enemy.fireTimer = 0.18;
+        ui.notice.textContent = "Scholopendra coils for another spray.";
+      }
+    }
+
+    function triggerScholopendraSecondPhase(enemy) {
+      enemy.secondPhase = true;
+      enemy.maxHp *= 2;
+      enemy.hp = enemy.maxHp;
+      enemy.phase = "ramWindup";
+      enemy.phaseTimer = 1.25;
+      enemy.fireTimer = 0.25;
+      enemy.ramWarning = 1.25;
+      enemy.y = Math.min(enemy.y, 118);
+      enemy.vx = 0;
+      enemy.speed = 0;
+      state.rumble = Math.max(state.rumble, 18);
+      addExplosion(enemy.x, enemy.y, "#d08a43", 42);
+      ui.notice.textContent = "Scholopendra molts. Phase two begins.";
+    }
+
+    function triggerScholopendraThirdPhase(enemy) {
+      enemy.thirdPhase = true;
+      enemy.maxHp *= 2;
+      enemy.hp = enemy.maxHp;
+      enemy.phase = "spray";
+      enemy.phaseTimer = 2.2;
+      enemy.fireTimer = 0.18;
+      enemy.bombTimer = 0.75;
+      enemy.ramWarning = 0;
+      enemy.y = Math.min(enemy.y, 146);
+      enemy.vx = 0;
+      enemy.speed = 0;
+      state.rumble = Math.max(state.rumble, 24);
+      addExplosion(enemy.x, enemy.y, "#ffdf8b", 56);
+      ui.notice.textContent = "Scholopendra splits into phase three. Homing bombs are live.";
+    }
+
+    function fireCentipedeBomb(enemy, player) {
+      const side = enemy.x < player.x ? 1 : -1;
+      state.bullets.push({
+        owner: "enemy",
+        kind: "centiBomb",
+        parent: enemy,
+        x: enemy.x + side * 36,
+        y: enemy.y + 18,
+        vx: side * 44,
+        vy: 145,
+        radius: 17,
+        damage: enemy.damage * 0.85,
+        color: "#d08a43",
+        life: 3.2,
+        fuse: 3.2,
+        hp: 58,
+        maxHp: 58,
+        turnRate: 185
+      });
+      addMuzzle(enemy.x + side * 36, enemy.y + 18, "#ffdf8b");
     }
 
     function updateHedgehogBoss(enemy, dt, player) {
@@ -2229,7 +2437,7 @@
           enemy.phase = "charge";
           enemy.phaseTimer = 1.45;
           enemy.chargeWarning = 0;
-          enemy.speed = -360;
+          enemy.speed = -180;
           state.rumble = 10;
         }
       } else if (enemy.phase === "charge") {
@@ -2246,8 +2454,8 @@
         if (enemy.y >= 138 || enemy.phaseTimer <= 0) {
           enemy.y = Math.min(enemy.y, 138);
           enemy.phase = "windup";
-          enemy.phaseTimer = 1.2;
-          enemy.chargeWarning = 1.2;
+          enemy.phaseTimer = 2.4;
+          enemy.chargeWarning = 2.4;
           ui.notice.textContent = "Pig-head ball is lining up a charge.";
         }
       }
@@ -2451,13 +2659,26 @@
 
     function updateBullets(dt) {
       for (const b of state.bullets) {
+        if (b.kind === "centiBomb") {
+          const dx = state.player.x - b.x;
+          const dy = state.player.y - b.y;
+          const dist = Math.max(1, Math.hypot(dx, dy));
+          b.vx += (dx / dist) * (b.turnRate || 160) * dt;
+          b.vy += (dy / dist) * (b.turnRate || 160) * dt;
+          const speed = Math.hypot(b.vx, b.vy);
+          const maxSpeed = 235;
+          if (speed > maxSpeed) {
+            b.vx = (b.vx / speed) * maxSpeed;
+            b.vy = (b.vy / speed) * maxSpeed;
+          }
+        }
         b.x += b.vx * dt;
         b.y += b.vy * dt;
         b.life -= dt;
         if (b.owner === "player" || b.owner === "racer") {
           if (b.owner === "player") {
           for (const target of state.bullets) {
-            if (target.kind === "joey" && target.life > 0 && rectCircleHit({ x: target.x, y: target.y, width: target.radius * 2, height: target.radius * 2 }, b)) {
+            if ((target.kind === "joey" || target.kind === "centiBomb") && target.life > 0 && rectCircleHit({ x: target.x, y: target.y, width: target.radius * 2, height: target.radius * 2 }, b)) {
               target.hp -= b.damage;
               b.hit += 1;
               addHit(target.x, target.y, "#ffc247");
@@ -2466,7 +2687,7 @@
                 target.life = 0;
                 target.exploded = true;
                 if (target.parent) target.parent.joeyActive = false;
-                addExplosion(target.x, target.y, "#d7a15c", 16);
+                addExplosion(target.x, target.y, target.kind === "centiBomb" ? "#ffdf8b" : "#d7a15c", 16);
               }
               break;
             }
@@ -2514,13 +2735,20 @@
               b.parent.joeyActive = false;
               b.exploded = true;
               addExplosion(b.x, b.y, "#d7a15c", 18);
+            } else if (b.kind === "centiBomb" && !b.exploded) {
+              b.exploded = true;
+              addExplosion(b.x, b.y, "#ffdf8b", 18);
             }
             continue;
           }
           if (state.player.pouchedTimer <= 0 && rectCircleHit(state.player, b)) {
             damagePlayer(b.damage);
             b.life = 0;
-            addHit(state.player.x, state.player.y, b.kind === "joey" ? "#d7a15c" : "#ff665a");
+            if (b.kind === "centiBomb" && !b.exploded) {
+              b.exploded = true;
+              addExplosion(b.x, b.y, "#ffdf8b", 22);
+            }
+            addHit(state.player.x, state.player.y, b.kind === "joey" ? "#d7a15c" : b.kind === "centiBomb" ? "#ffdf8b" : "#ff665a");
           }
         }
       }
@@ -2530,6 +2758,9 @@
           b.parent.joeyActive = false;
           b.exploded = true;
           addExplosion(b.x, b.y, "#d7a15c", 18);
+        } else if (!alive && b.kind === "centiBomb" && !b.exploded) {
+          b.exploded = true;
+          addExplosion(b.x, b.y, "#ffdf8b", 18);
         }
         return alive;
       });
@@ -2570,7 +2801,8 @@
         if (enemy.kind === "kangaroo") continue;
         if (rectHit(p, enemy)) {
           const impact = enemy.damage + Math.abs(p.speed - enemy.speed) * 0.08;
-          damagePlayer(impact);
+          const cappedImpact = enemy.kind === "pigBall" ? Math.min(impact, Math.max(1, p.hp * 0.5)) : impact;
+          damagePlayer(cappedImpact);
           enemy.hp -= 28 + p.speed * 0.08 + p.ramDamage;
           p.speed *= 0.72;
           p.vx += Math.sign(p.x - enemy.x || 1) * 130 * (1 - p.impactControl);
@@ -2674,6 +2906,7 @@
       state.upgradePicks = place === 1 ? 3 : place === 2 ? 2 : 1;
       state.score += Math.max(0, state.race) * 500 + Math.ceil(state.player.hp) * 4;
       if (state.endlessMode) {
+        rememberEndlessBoss(state.bossKind);
         state.endlessBossesDefeated += 1;
         state.race = state.endlessBossesDefeated;
         state.score += state.endlessBossesDefeated * 650;
@@ -2692,12 +2925,27 @@
         startBlackoutWin(place);
         return;
       }
+      if (state.race === levelRoute.length - 1) {
+        startBlackoutNextLevel(place);
+        return;
+      }
       state.player.hp = Math.min(state.player.maxHp, state.player.hp + 18 + state.raceKills * 2);
       ui.garageTitle.textContent = state.race === 0 ? "Practice Complete" : "Race " + state.race + " Finished: Place " + place;
       ui.garageCopy.textContent = place === 1 ? "First place earns three upgrades. Pick your first prize." : "Pick your upgrade reward for the next race.";
       ui.garageStats.textContent = "Place: " + place + " | Upgrade picks: " + state.upgradePicks + " | Score: " + state.score + " | High score: " + state.highScore + " | Hull: " + Math.ceil(state.player.hp) + "/" + state.player.maxHp;
       renderUpgradeChoices();
       ui.garageOverlay.classList.remove("hidden");
+    }
+
+    function skipToFirstPlaceUpgrade() {
+      if (!state || state.mode !== "race") return;
+      state.bossDefeated = true;
+      state.distance = state.raceLength;
+      state.racers.forEach((racer) => {
+        racer.distance = Math.min(racer.distance, state.distance - 200);
+      });
+      ui.notice.textContent = "Skipped to first-place upgrade.";
+      finishRace();
     }
 
     function getPlayerPlace() {
@@ -2723,13 +2971,24 @@
       recordHighScore();
       stopMusic();
       ui.gameOverTitle.textContent = "You Win";
-      ui.gameOverCopy.textContent = "You cleared all " + levelRoute.length + " levels, survived the water-slide finale, conquered the racetrack boss rush, scored " + state.score + ", destroyed " + state.totalKills + " enemies, and drove out with " + state.scrap + " scrap.";
+      ui.gameOverCopy.textContent = "You cleared all " + levelRoute.length + " levels, survived the water-slide finale, conquered the racetrack boss rush, defeated Scholopendra, scored " + state.score + ", destroyed " + state.totalKills + " enemies, and drove out with " + state.scrap + " scrap.";
       ui.gameOverOverlay.classList.remove("hidden");
     }
 
     function startBlackoutWin(place) {
       state.mode = "blackoutWin";
       state.pendingWinPlace = place;
+      state.lastPlace = place;
+      state.endingBlackoutTimer = 1.7;
+      state.rumble = 0;
+      hideAllOverlays();
+      playEndingScreech();
+    }
+
+    function startBlackoutNextLevel(place) {
+      state.mode = "blackoutNextLevel";
+      state.pendingWinPlace = place;
+      state.pendingNextRace = true;
       state.lastPlace = place;
       state.endingBlackoutTimer = 1.7;
       state.rumble = 0;
@@ -2783,7 +3042,7 @@
     }
 
     function render() {
-      if (state && state.mode === "blackoutWin") {
+      if (state && (state.mode === "blackoutWin" || state.mode === "blackoutNextLevel")) {
         ctx.fillStyle = "#000";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         requestAnimationFrame(tick);
@@ -2943,8 +3202,8 @@
           ctx.ellipse(x, camera.horizon + 46 + (i % 3) * 12, 150, 38, 0, 0, Math.PI * 2);
           ctx.fill();
         }
-      } else if (state?.trackTheme === "cave" || state?.trackTheme === "redcave") {
-        ctx.fillStyle = state?.trackTheme === "redcave" ? "rgba(255,83,74,0.15)" : "rgba(191,239,255,0.12)";
+      } else if (state?.trackTheme === "cave" || state?.trackTheme === "redcave" || state?.trackTheme === "darkcave") {
+        ctx.fillStyle = state?.trackTheme === "darkcave" ? "rgba(143,124,255,0.08)" : state?.trackTheme === "redcave" ? "rgba(255,83,74,0.15)" : "rgba(191,239,255,0.12)";
         for (let i = 0; i < 12; i++) {
           const x = (i * 117 + distance * 0.03) % canvas.width;
           ctx.beginPath();
@@ -3038,6 +3297,19 @@
           dirt: "#3d2428",
           detail: "rgba(255,154,168,0.14)"
         },
+        darkcave: {
+          skyTop: "#020204",
+          skyMid: "#08070d",
+          ground: "#111018",
+          horizon: "#010103",
+          glow: "rgba(143, 124, 255, 0.08)",
+          roadA: "#0d0e13",
+          roadB: "#161722",
+          roadCenter: "rgba(38, 38, 58, 0.62)",
+          edge: "#4f427f",
+          dirt: "#171520",
+          detail: "rgba(143,124,255,0.1)"
+        },
         waterslide: {
           skyTop: "#06354a",
           skyMid: "#1c8bb3",
@@ -3127,8 +3399,8 @@
           ctx.ellipse(-18, -22, 22, 7, -0.6, 0, Math.PI * 2);
           ctx.ellipse(18, -18, 18, 6, 0.5, 0, Math.PI * 2);
           ctx.fill();
-        } else if (state?.trackTheme === "cave" || state?.trackTheme === "redcave") {
-          ctx.fillStyle = state?.trackTheme === "redcave" ? "rgba(255,83,74,0.16)" : "rgba(191,239,255,0.12)";
+        } else if (state?.trackTheme === "cave" || state?.trackTheme === "redcave" || state?.trackTheme === "darkcave") {
+          ctx.fillStyle = state?.trackTheme === "darkcave" ? "rgba(143,124,255,0.1)" : state?.trackTheme === "redcave" ? "rgba(255,83,74,0.16)" : "rgba(191,239,255,0.12)";
           ctx.beginPath();
           ctx.moveTo(-9, -24);
           ctx.lineTo(0, -2);
@@ -3181,6 +3453,8 @@
         drawKangarooBoss(enemy);
       } else if (enemy.kind === "manateeBoss") {
         drawManateeBoss(enemy);
+      } else if (enemy.kind === "centipede") {
+        drawCentipedeBoss(enemy);
       } else if (enemy.kind === "hedgehog") {
         drawHedgehogBoss(enemy);
       } else if (enemy.kind === "rushUnicorn" || enemy.kind === "rushRedTow" || enemy.kind === "rushPigTow") {
@@ -3198,9 +3472,10 @@
       }
       if (enemy.phase === "windup") drawSlamWarning(enemy);
       if (enemy.kind === "pigBall" && enemy.phase === "windup") drawChargeWarning(enemy);
+      if (enemy.kind === "centipede" && enemy.phase === "ramWindup") drawChargeWarning(enemy);
       if (enemy.kind !== "hedgehog") {
         const pct = clamp(enemy.hp / enemy.maxHp, 0, 1);
-        drawHealthBar(enemy.x, enemy.y - enemy.height / 2 - 13, isBossEnemy(enemy) ? 132 : 52, pct, isMonster(enemy) ? "#8ae05f" : enemy.kind === "kangaroo" || enemy.kind === "boss" || enemy.kind === "rushUnicorn" ? "#ffcf5b" : enemy.kind === "ape" || enemy.kind === "manateeBoss" || enemy.kind === "rushPigTow" ? "#bfefff" : "#ff665a");
+        drawHealthBar(enemy.x, enemy.y - enemy.height / 2 - 13, isBossEnemy(enemy) ? 132 : 52, pct, isMonster(enemy) ? "#8ae05f" : enemy.kind === "kangaroo" || enemy.kind === "boss" || enemy.kind === "rushUnicorn" ? "#ffcf5b" : enemy.kind === "ape" || enemy.kind === "manateeBoss" || enemy.kind === "rushPigTow" ? "#bfefff" : enemy.kind === "centipede" ? "#d08a43" : "#ff665a");
       }
     }
 
@@ -3789,6 +4064,76 @@
       ctx.restore();
     }
 
+    function drawCentipedeBoss(enemy) {
+      const p = projectPoint(enemy.x, enemy.y);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.scale(p.scale, p.scale);
+      ctx.fillStyle = "rgba(0,0,0,0.38)";
+      ctx.beginPath();
+      ctx.ellipse(8, 78, 92, 25, 0, 0, Math.PI * 2);
+      ctx.fill();
+      for (let i = 7; i >= 0; i--) {
+        const wobble = Math.sin(performance.now() * 0.006 + i * 0.9) * 10;
+        const y = 70 - i * 24;
+        const x = wobble * (0.4 + i * 0.06);
+        ctx.fillStyle = i % 2 ? "#5b341c" : "#7a4825";
+        ctx.beginPath();
+        ctx.ellipse(x, y, 46 - i * 1.7, 23, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = enemy.secondPhase ? "#f0b45b" : "#a86535";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(x, y, 48 - i * 1.7, 25, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.strokeStyle = "#d4a064";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(x - 36, y + 2);
+        ctx.lineTo(x - 68, y + 18);
+        ctx.moveTo(x + 36, y + 2);
+        ctx.lineTo(x + 68, y + 18);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#6b3d21";
+      ctx.beginPath();
+      ctx.ellipse(0, -122, 55, 40, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#f0d09b";
+      ctx.beginPath();
+      ctx.arc(-18, -133, 7, 0, Math.PI * 2);
+      ctx.arc(18, -133, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#15191a";
+      ctx.beginPath();
+      ctx.arc(-18, -133, 3, 0, Math.PI * 2);
+      ctx.arc(18, -133, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#c07a3d";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(-28, -153);
+      ctx.quadraticCurveTo(-56, -178, -76, -164);
+      ctx.moveTo(28, -153);
+      ctx.quadraticCurveTo(56, -178, 76, -164);
+      ctx.stroke();
+      ctx.fillStyle = enemy.secondPhase ? "#f0b45b" : "#d08a43";
+      ctx.globalAlpha = 0.45 + Math.sin(performance.now() * 0.014) * 0.12;
+      ctx.beginPath();
+      ctx.arc(0, -98, 18, 0, Math.PI * 2);
+      ctx.fill();
+      if (enemy.secondPhase) {
+        ctx.globalAlpha = 0.28 + Math.sin(performance.now() * 0.02) * 0.08;
+        ctx.strokeStyle = "#ffdf8b";
+        ctx.lineWidth = 7;
+        ctx.beginPath();
+        ctx.ellipse(0, -18, 74, 188, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+
     function drawHedgehogBoss(enemy) {
       const p = projectPoint(enemy.x, enemy.y);
       ctx.save();
@@ -4031,6 +4376,11 @@
         if (b.maxHp) drawHealthBar(b.x, b.y - 24, 36, clamp(b.hp / b.maxHp, 0, 1), "#ffc247");
         return;
       }
+      if (b.kind === "centiBomb") {
+        drawCentipedeBomb(b);
+        if (b.maxHp) drawHealthBar(b.x, b.y - 24, 42, clamp(b.hp / b.maxHp, 0, 1), "#ffdf8b");
+        return;
+      }
       const p = projectPoint(b.x, b.y);
       const tail = projectPoint(b.x - b.vx * 0.035, b.y - b.vy * 0.035);
       if (b.kind === "beam") {
@@ -4064,6 +4414,41 @@
       ctx.lineTo(tail.x, tail.y);
       ctx.stroke();
       ctx.globalAlpha = 1;
+    }
+
+    function drawCentipedeBomb(b) {
+      const p = projectPoint(b.x, b.y);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.scale(p.scale, p.scale);
+      ctx.rotate(Math.atan2(b.vy, b.vx) + Math.PI / 2);
+      ctx.fillStyle = "rgba(0,0,0,0.3)";
+      ctx.beginPath();
+      ctx.ellipse(4, 18, 24, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#7a4825";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 17, 23, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#d08a43";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 19, 25, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = "#f0b45b";
+      for (let i = -2; i <= 2; i++) {
+        ctx.beginPath();
+        ctx.arc(i * 7, -7 + Math.abs(i) * 2, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = "#ffdf8b";
+      ctx.globalAlpha = 0.58 + Math.sin(performance.now() * 0.028) * 0.18;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(0, 0, 25, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.restore();
     }
 
     function drawJoeyBomb(b) {
@@ -4304,20 +4689,49 @@
       const context = audio?.context || new (window.AudioContext || window.webkitAudioContext)();
       const destination = audio?.master || context.destination;
       const now = context.currentTime;
-      const osc = context.createOscillator();
       const gain = context.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(2350, now);
-      osc.frequency.setValueAtTime(2450, now + 0.55);
-      osc.frequency.setValueAtTime(2320, now + 1.15);
+      const filter = context.createBiquadFilter();
+      const low = context.createOscillator();
+      const grind = context.createOscillator();
+      const lfo = context.createOscillator();
+      const lfoGain = context.createGain();
+      const noise = context.createBufferSource();
+      const noiseBuffer = context.createBuffer(1, Math.ceil(context.sampleRate * 1.7), context.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+      low.type = "sawtooth";
+      grind.type = "square";
+      lfo.type = "sine";
+      low.frequency.setValueAtTime(58, now);
+      low.frequency.linearRampToValueAtTime(41, now + 1.45);
+      grind.frequency.setValueAtTime(92, now);
+      grind.frequency.linearRampToValueAtTime(64, now + 1.45);
+      lfo.frequency.setValueAtTime(18, now);
+      lfoGain.gain.setValueAtTime(18, now);
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(420, now);
+      filter.frequency.linearRampToValueAtTime(170, now + 1.5);
+      filter.Q.setValueAtTime(9, now);
       gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.42, now + 0.04);
-      gain.gain.setValueAtTime(0.42, now + 1.35);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.62);
-      osc.connect(gain);
+      gain.gain.exponentialRampToValueAtTime(0.48, now + 0.05);
+      gain.gain.setValueAtTime(0.44, now + 1.25);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.68);
+      noise.buffer = noiseBuffer;
+      lfo.connect(lfoGain);
+      lfoGain.connect(low.frequency);
+      low.connect(filter);
+      grind.connect(filter);
+      noise.connect(filter);
+      filter.connect(gain);
       gain.connect(destination);
-      osc.start(now);
-      osc.stop(now + 1.7);
+      low.start(now);
+      grind.start(now);
+      lfo.start(now);
+      noise.start(now);
+      low.stop(now + 1.72);
+      grind.stop(now + 1.72);
+      lfo.stop(now + 1.72);
+      noise.stop(now + 1.72);
     }
 
     function playMusicStep() {
@@ -4577,6 +4991,22 @@
           snareGain: 0.095,
           hatGain: 0.055,
           hats: true
+        },
+        "boss-centipede": {
+          bass: [49, 65.41, 73.42, 65.41, 55, 73.42, 82.41, 73.42],
+          lead: [392, 0, 369.99, 293.66, 0, 246.94, 293.66, 0, 440, 392, 369.99, 0, 329.63, 293.66, 246.94, 0],
+          chords: [98, 130.81, 146.83, 110],
+          sparkle: [783.99, 739.99, 587.33, 493.88],
+          leadWave: "square",
+          urgency: 1.58,
+          bassGain: 0.34,
+          subGain: 0.1,
+          chordGain: 0.045,
+          leadGain: 0.12,
+          kickGain: 0.14,
+          snareGain: 0.12,
+          hatGain: 0.075,
+          hats: true
         }
       };
       if (mode !== "race") return themes[mode];
@@ -4696,6 +5126,11 @@
     window.addEventListener("keydown", (event) => {
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Space", "Shift"].includes(event.key) || ["Space", "ShiftLeft", "ShiftRight"].includes(event.code)) {
         event.preventDefault();
+      }
+      if ((event.key === "x" || event.key === "X" || event.code === "KeyX") && state && state.mode === "race") {
+        event.preventDefault();
+        skipToFirstPlaceUpgrade();
+        return;
       }
       keys.add(event.key);
       if (typeof event.key === "string") keys.add(event.key.toLowerCase());
