@@ -1297,7 +1297,7 @@
         if (state.bossKind === "manateeBoss") return "Level " + state.race + ": manatee boss. It hides in water and fires water bursts.";
         if (state.bossKind === "kangaroo") return "Level " + state.race + ": kangaroo boss. Watch the arm swipe and pouch shake.";
         if (state.bossKind === "hedgehog") return "Level " + state.race + ": hedgehog survival. Dodge the triple shots for 60 seconds.";
-        if (state.bossKind === "bossRush") return "Level " + state.race + ": boss rush. No racers, just you and four huge rival machines.";
+        if (state.bossKind === "bossRush") return "Level " + state.race + ": boss rush. No racers, just you and five huge rival machines.";
         if (state.bossKind === "centipede") return "Level " + state.race + ": Scholopendra finale. Survive the dark-cave spray.";
         return "Level " + state.race + ": car boss on the racetrack.";
       }
@@ -1558,7 +1558,7 @@
         addBossRushEnemy(bossRushOrder[state.bossRushIndex] || bossRushOrder[0], heat, bossHp * 1.1);
         return;
       }
-      if (state.bossKind === "rushUnicorn" || state.bossKind === "rushRedTow" || state.bossKind === "rushPigTow" || state.bossKind === "rushBear") {
+      if (state.bossKind === "rushUnicorn" || state.bossKind === "rushRedTow" || state.bossKind === "rushPigTow" || state.bossKind === "rushBear" || state.bossKind === "rushRv") {
         addBossRushEnemy(state.bossKind, heat, bossHp * 0.8);
         return;
       }
@@ -1763,7 +1763,7 @@
           damage: 24 + heat * 3,
           color: "#c99a4a"
         });
-        ui.notice.textContent = "Boss rush 1/4: giant Tumblecorn fires triple horn shots.";
+        ui.notice.textContent = "Boss rush 1/5: giant Tumblecorn fires triple horn shots.";
       } else if (kind === "rushRedTow") {
         state.enemies.push({
           ...base,
@@ -1776,7 +1776,7 @@
           hookWarning: 0,
           color: "#ff2e24"
         });
-        ui.notice.textContent = "Boss rush 2/4: Red Hook throws bombs and fires a tow cable.";
+        ui.notice.textContent = "Boss rush 2/5: Red Hook throws bombs and fires a tow cable.";
       } else if (kind === "rushPigTow") {
         state.enemies.push({
           ...base,
@@ -1789,8 +1789,8 @@
           hideTimer: 0,
           color: "#d98332"
         });
-        ui.notice.textContent = "Boss rush 3/4: Piggyback Tow hides like the manatee boss.";
-      } else {
+        ui.notice.textContent = "Boss rush 3/5: Piggyback Tow hides like the manatee boss.";
+      } else if (kind === "rushBear") {
         state.enemies.push({
           ...base,
           skin: "bear",
@@ -1801,7 +1801,19 @@
           phaseTimer: 2.4,
           color: "#1b1716"
         });
-        ui.notice.textContent = "Boss rush 4/4: Black Bear throws rings of ninja stars.";
+        ui.notice.textContent = "Boss rush 4/5: Black Bear throws rings of ninja stars.";
+      } else {
+        state.enemies.push({
+          ...base,
+          skin: "rv",
+          width: 134,
+          height: 150,
+          damage: 23 + heat * 3,
+          fireTimer: 0.65,
+          phaseTimer: 2.6,
+          color: "#e8dfc6"
+        });
+        ui.notice.textContent = "Boss rush 5/5: RV hurls soda cans across the track.";
       }
     }
 
@@ -1826,7 +1838,7 @@
     }
 
     function isBossEnemy(enemy) {
-      return enemy.kind === "boss" || enemy.kind === "kangaroo" || enemy.kind === "ape" || enemy.kind === "manateeBoss" || enemy.kind === "hedgehog" || enemy.kind === "rushUnicorn" || enemy.kind === "rushRedTow" || enemy.kind === "rushPigTow" || enemy.kind === "rushBear" || enemy.kind === "pigBall" || enemy.kind === "centipede";
+      return enemy.kind === "boss" || enemy.kind === "kangaroo" || enemy.kind === "ape" || enemy.kind === "manateeBoss" || enemy.kind === "hedgehog" || enemy.kind === "rushUnicorn" || enemy.kind === "rushRedTow" || enemy.kind === "rushPigTow" || enemy.kind === "rushBear" || enemy.kind === "rushRv" || enemy.kind === "pigBall" || enemy.kind === "centipede";
     }
 
     function maybeDropBossScrap(enemy) {
@@ -2043,6 +2055,8 @@
           updateRushPigTowBoss(enemy, dt, p);
         } else if (enemy.kind === "rushBear") {
           updateRushBearBoss(enemy, dt, p);
+        } else if (enemy.kind === "rushRv") {
+          updateRushRvBoss(enemy, dt, p);
         } else if (enemy.kind === "pigBall") {
           updatePigBallBoss(enemy, dt, p);
         } else if (enemy.kind === "centipede") {
@@ -2075,7 +2089,7 @@
         }
         enemy.x += enemy.vx * dt;
         enemy.x = clamp(enemy.x, roadMinX(enemy.width), roadMaxX(enemy.width));
-        if ((enemy.kind !== "boss" && enemy.kind !== "kangaroo" && enemy.kind !== "ape" && enemy.kind !== "manateeBoss" && enemy.kind !== "hedgehog" && enemy.kind !== "rushUnicorn" && enemy.kind !== "rushRedTow" && enemy.kind !== "rushPigTow" && enemy.kind !== "rushBear" && enemy.kind !== "pigBall" && enemy.kind !== "centipede") || enemy.phase === "fire" || enemy.phase === "windup") {
+        if ((enemy.kind !== "boss" && enemy.kind !== "kangaroo" && enemy.kind !== "ape" && enemy.kind !== "manateeBoss" && enemy.kind !== "hedgehog" && enemy.kind !== "rushUnicorn" && enemy.kind !== "rushRedTow" && enemy.kind !== "rushPigTow" && enemy.kind !== "rushBear" && enemy.kind !== "rushRv" && enemy.kind !== "pigBall" && enemy.kind !== "centipede") || enemy.phase === "fire" || enemy.phase === "windup") {
           enemy.y += (state.player.speed - enemy.speed) * dt;
         }
       }
@@ -2478,6 +2492,37 @@
         enemy.phaseTimer = 2.7;
         enemy.fireTimer = 0.18;
         ui.notice.textContent = "Black Bear scatters ninja stars.";
+      }
+    }
+
+    function updateRushRvBoss(enemy, dt, player) {
+      enemy.phaseTimer -= dt;
+      enemy.y = Math.min(enemy.y + 150 * dt, 148);
+      updateBossSway(enemy, dt);
+      enemy.fireTimer -= dt;
+      if (enemy.fireTimer <= 0 && enemy.y > 45) {
+        enemy.fireTimer = 0.78;
+        [-34, 0, 34].forEach((offset, index) => {
+          state.bullets.push({
+            owner: "enemy",
+            kind: "sodaCan",
+            x: enemy.x + offset,
+            y: enemy.y + 38,
+            vx: clamp((player.x - enemy.x) * 0.12 + offset * 2.1, -210, 210),
+            vy: 410 + index * 34,
+            radius: 9,
+            damage: enemy.damage * 0.72,
+            color: index === 1 ? "#ff534a" : "#4fd3d7",
+            life: 2.2,
+            spin: rand(0, Math.PI * 2)
+          });
+        });
+        addMuzzle(enemy.x, enemy.y + 32, "#ff534a");
+      }
+      if (enemy.phaseTimer <= 0) {
+        enemy.phaseTimer = 2.9;
+        enemy.fireTimer = 0.22;
+        ui.notice.textContent = "RV boss shakes up a soda-can barrage.";
       }
     }
 
@@ -3672,7 +3717,7 @@
         drawCentipedeBoss(enemy);
       } else if (enemy.kind === "hedgehog") {
         drawHedgehogBoss(enemy);
-      } else if (enemy.kind === "rushUnicorn" || enemy.kind === "rushRedTow" || enemy.kind === "rushPigTow" || enemy.kind === "rushBear") {
+      } else if (enemy.kind === "rushUnicorn" || enemy.kind === "rushRedTow" || enemy.kind === "rushPigTow" || enemy.kind === "rushBear" || enemy.kind === "rushRv") {
         drawRushRacerBoss(enemy);
       } else if (enemy.kind === "pigBall") {
         drawPigBallBoss(enemy);
@@ -3690,7 +3735,7 @@
       if (enemy.kind === "centipede" && enemy.phase === "ramWindup") drawChargeWarning(enemy);
       if (enemy.kind !== "hedgehog") {
         const pct = clamp(enemy.hp / enemy.maxHp, 0, 1);
-        drawHealthBar(enemy.x, enemy.y - enemy.height / 2 - 13, isBossEnemy(enemy) ? 132 : 52, pct, isMonster(enemy) ? "#8ae05f" : enemy.kind === "kangaroo" || enemy.kind === "boss" || enemy.kind === "rushUnicorn" ? "#ffcf5b" : enemy.kind === "ape" || enemy.kind === "manateeBoss" || enemy.kind === "rushPigTow" ? "#bfefff" : enemy.kind === "rushBear" ? "#d9dde2" : enemy.kind === "centipede" ? "#d08a43" : "#ff665a");
+        drawHealthBar(enemy.x, enemy.y - enemy.height / 2 - 13, isBossEnemy(enemy) ? 132 : 52, pct, isMonster(enemy) ? "#8ae05f" : enemy.kind === "kangaroo" || enemy.kind === "boss" || enemy.kind === "rushUnicorn" ? "#ffcf5b" : enemy.kind === "ape" || enemy.kind === "manateeBoss" || enemy.kind === "rushPigTow" ? "#bfefff" : enemy.kind === "rushBear" ? "#d9dde2" : enemy.kind === "rushRv" ? "#ff534a" : enemy.kind === "centipede" ? "#d08a43" : "#ff665a");
       }
     }
 
@@ -4491,6 +4536,15 @@
         ctx.arc(-10, -18, 5, 0, Math.PI * 2);
         ctx.arc(10, -18, 5, 0, Math.PI * 2);
         ctx.fill();
+      } else if (enemy.kind === "rushRv") {
+        ctx.fillStyle = "#ff534a";
+        ctx.fillRect(-48, -48, 96, 10);
+        ctx.fillStyle = "#4fd3d7";
+        ctx.fillRect(-42, 31, 84, 10);
+        ctx.fillStyle = "#ffc247";
+        ctx.font = "800 18px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("POP", 0, -14);
       }
       ctx.restore();
     }
@@ -4611,6 +4665,10 @@
         drawNinjaStar(b);
         return;
       }
+      if (b.kind === "sodaCan") {
+        drawSodaCan(b);
+        return;
+      }
       const p = projectPoint(b.x, b.y);
       const tail = projectPoint(b.x - b.vx * 0.035, b.y - b.vy * 0.035);
       if (b.kind === "beam") {
@@ -4671,6 +4729,26 @@
       ctx.beginPath();
       ctx.arc(0, 0, 3.5, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
+    }
+
+    function drawSodaCan(b) {
+      const p = projectPoint(b.x, b.y);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.scale(p.scale, p.scale);
+      ctx.rotate((performance.now() * 0.012) + (b.spin || 0));
+      ctx.fillStyle = b.color;
+      roundRect(-9, -15, 18, 30, 4);
+      ctx.fillStyle = "#f7f3df";
+      ctx.fillRect(-8, -8, 16, 7);
+      ctx.fillRect(-8, 7, 16, 4);
+      ctx.strokeStyle = "#15191a";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(0, -15, 8, 3, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 15, 8, 3, 0, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.restore();
     }
 
@@ -5429,10 +5507,6 @@
     });
     document.getElementById("endlessBtn").addEventListener("click", () => {
       newRun(false, true);
-      if (musicEnabled) startMusic();
-    });
-    document.getElementById("demoBtn").addEventListener("click", () => {
-      newRun(true);
       if (musicEnabled) startMusic();
     });
     document.getElementById("restartBtn").addEventListener("click", () => {
