@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Road Reaper Rally</title>
+  <title>A Parade of Horribles</title>
   <style>
     :root {
       color-scheme: dark;
@@ -507,7 +507,7 @@
   </style>
 </head>
 <body>
-  <main class="game-shell" aria-label="Road Reaper Rally game">
+  <main class="game-shell" aria-label="A Parade of Horribles game">
     <canvas id="game" width="1280" height="820"></canvas>
 
     <section class="hud" aria-hidden="true">
@@ -549,10 +549,11 @@
 
     <section class="overlay" id="startOverlay">
       <div class="modal">
-        <h1>Road Reaper Rally</h1>
+        <h1>A Parade of Horribles</h1>
         <p class="lede">A roguelike car combat racer. Finish brutal road stages, wreck rival drivers and roadside monsters, then bolt new weapons and defenses onto your machine before the next race gets meaner.</p>
         <div class="button-row">
           <button id="startBtn">Start Run</button>
+          <button class="secondary" id="endlessBtn">Infinite Boss Mode</button>
           <button class="secondary" id="demoBtn">Practice Race</button>
         </div>
         <p class="small">Controls: WASD or arrows steer and accelerate, Space fires, Shift boosts. Pick one upgrade after every survived race.</p>
@@ -640,6 +641,7 @@
       { theme: "racetrack", boss: true, bossKind: "bossRush", name: "Boss Rush" }
     ];
     const bossRushOrder = ["rushUnicorn", "rushRedTow", "rushPigTow"];
+    const endlessBossOrder = ["boss", "manateeBoss", "kangaroo", "ape", "rushUnicorn", "rushRedTow", "rushPigTow", "pigBall"];
 
     function loadHighScore() {
       try {
@@ -961,6 +963,15 @@
         }
       },
       {
+        name: "Driver Breaker",
+        type: "weapon",
+        text: "Unlocks killing rival drivers with your weapon fire.",
+        apply: () => {
+          state.player.driverKillUnlocked = true;
+          state.player.damage += 6;
+        }
+      },
+      {
         name: "Foam Tires",
         type: "defense",
         text: "Better grip and a larger boost tank.",
@@ -1044,11 +1055,13 @@
       }
     ];
 
-    function newRun(practice = false) {
+    function newRun(practice = false, endless = false) {
       state = {
         mode: "race",
         race: practice ? 0 : 1,
         heat: practice ? 0.7 : 1,
+        endlessMode: endless,
+        endlessBossesDefeated: 0,
         bossRace: false,
         bossKind: "car",
         trackTheme: "racetrack",
@@ -1115,6 +1128,7 @@
           shieldRecharge: 0,
           scrapBonus: 0,
           critChance: 0,
+          driverKillUnlocked: false,
           pouchedTimer: 0,
           pouchCooldown: 0,
           pouchReturnX: laneCenter(1.5),
@@ -1133,8 +1147,23 @@
       ui.gameOverOverlay.classList.add("hidden");
     }
 
+    function returnToTitle() {
+      stopMusic();
+      state = null;
+      shootHeld = false;
+      keys.clear();
+      ui.garageOverlay.classList.add("hidden");
+      ui.gameOverOverlay.classList.add("hidden");
+      ui.startOverlay.classList.remove("hidden");
+      ui.notice.textContent = "WASD or arrow keys to drive. Space fires. Shift boosts. Survive each race to claim an upgrade.";
+    }
+
     function startNextRace() {
-      state.race += 1;
+      if (state.endlessMode) {
+        state.race = state.endlessBossesDefeated + 1;
+      } else {
+        state.race += 1;
+      }
       state.heat += 0.45;
       applyLevelConfig(false);
       state.bossSpawned = false;
@@ -1177,6 +1206,17 @@
     }
 
     function applyLevelConfig(initial) {
+      if (state.endlessMode) {
+        const kind = endlessBossOrder[Math.floor(rand(0, endlessBossOrder.length))];
+        state.bossRace = true;
+        state.bossKind = kind;
+        state.trackTheme = kind === "pigBall" ? "redcave" : kind === "manateeBoss" || kind === "rushPigTow" ? "cave" : kind === "kangaroo" ? "desert" : kind === "ape" ? "jungle" : "racetrack";
+        state.survivalDuration = 0;
+        state.survivalTimer = 0;
+        state.lapLength = 2500 + state.endlessBossesDefeated * 180;
+        state.raceLength = state.lapLength * 3;
+        return;
+      }
       const level = getLevelConfig();
       state.bossRace = !!level.boss;
       state.bossKind = level.bossKind || "none";
@@ -1190,6 +1230,7 @@
     function getLevelNotice() {
       const level = getLevelConfig();
       if (state.bossRace) {
+        if (state.endlessMode) return "Infinite Boss " + (state.endlessBossesDefeated + 1) + ": destroy the boss, then choose an upgrade.";
         if (state.bossKind === "ape") return "Level " + state.race + ": white ape boss. Dodge staff beams and end the rally.";
         if (state.bossKind === "manateeBoss") return "Level " + state.race + ": manatee boss. It hides in water and fires water bursts.";
         if (state.bossKind === "kangaroo") return "Level " + state.race + ": kangaroo boss. Watch the arm swipe and pouch shake.";
@@ -1399,9 +1440,39 @@
     function addBoss(heat) {
       state.bossSpawned = true;
       state.spawnTimer = 999;
-      const bossHp = (760 + state.race * 105) * 20 * (state.bossRace && state.race === 2 ? 0.5 : 1);
+      const endlessScale = state.endlessMode ? 1 + state.endlessBossesDefeated * 0.38 : 1;
+      const bossHp = (760 + state.race * 105) * 20 * (state.bossRace && state.race === 2 && !state.endlessMode ? 0.5 : 1) * endlessScale;
       if (state.bossKind === "bossRush") {
         addBossRushEnemy(bossRushOrder[state.bossRushIndex] || bossRushOrder[0], heat, bossHp * 1.1);
+        return;
+      }
+      if (state.bossKind === "rushUnicorn" || state.bossKind === "rushRedTow" || state.bossKind === "rushPigTow") {
+        addBossRushEnemy(state.bossKind, heat, bossHp * 0.8);
+        return;
+      }
+      if (state.bossKind === "pigBall") {
+        state.enemies.push({
+          kind: "pigBall",
+          x: laneCenter(1.5),
+          y: -150,
+          vx: 0,
+          speed: 0,
+          width: 136,
+          height: 136,
+          hp: bossHp * 0.85,
+          maxHp: bossHp * 0.85,
+          damage: 34 + heat * 4,
+          phase: "windup",
+          phaseTimer: 1.2,
+          fireTimer: 999,
+          chargeWarning: 1.2,
+          color: "#ff9aa8",
+          swayTime: rand(0, Math.PI * 2),
+          swaySpeed: 0.62,
+          scoreValue: 2800 + state.endlessBossesDefeated * 240,
+          scrapValue: 84 + state.endlessBossesDefeated * 5
+        });
+        ui.notice.textContent = "Infinite boss: a ball of pig heads is charging.";
         return;
       }
       if (state.bossKind === "ape") {
@@ -1605,7 +1676,7 @@
     }
 
     function isBossEnemy(enemy) {
-      return enemy.kind === "boss" || enemy.kind === "kangaroo" || enemy.kind === "ape" || enemy.kind === "manateeBoss" || enemy.kind === "hedgehog" || enemy.kind === "rushUnicorn" || enemy.kind === "rushRedTow" || enemy.kind === "rushPigTow";
+      return enemy.kind === "boss" || enemy.kind === "kangaroo" || enemy.kind === "ape" || enemy.kind === "manateeBoss" || enemy.kind === "hedgehog" || enemy.kind === "rushUnicorn" || enemy.kind === "rushRedTow" || enemy.kind === "rushPigTow" || enemy.kind === "pigBall";
     }
 
     function maybeDropBossScrap(enemy) {
@@ -1820,6 +1891,8 @@
           updateRushRedTowBoss(enemy, dt, p);
         } else if (enemy.kind === "rushPigTow") {
           updateRushPigTowBoss(enemy, dt, p);
+        } else if (enemy.kind === "pigBall") {
+          updatePigBallBoss(enemy, dt, p);
         } else if (enemy.kind === "manatee") {
           updateManatee(enemy, dt, p);
         } else if (enemy.kind === "piranha") {
@@ -1848,7 +1921,7 @@
         }
         enemy.x += enemy.vx * dt;
         enemy.x = clamp(enemy.x, roadMinX(enemy.width), roadMaxX(enemy.width));
-        if ((enemy.kind !== "boss" && enemy.kind !== "kangaroo" && enemy.kind !== "ape" && enemy.kind !== "manateeBoss" && enemy.kind !== "hedgehog" && enemy.kind !== "rushUnicorn" && enemy.kind !== "rushRedTow" && enemy.kind !== "rushPigTow") || enemy.phase === "fire" || enemy.phase === "windup") {
+        if ((enemy.kind !== "boss" && enemy.kind !== "kangaroo" && enemy.kind !== "ape" && enemy.kind !== "manateeBoss" && enemy.kind !== "hedgehog" && enemy.kind !== "rushUnicorn" && enemy.kind !== "rushRedTow" && enemy.kind !== "rushPigTow" && enemy.kind !== "pigBall") || enemy.phase === "fire" || enemy.phase === "windup") {
           enemy.y += (state.player.speed - enemy.speed) * dt;
         }
       }
@@ -2146,6 +2219,40 @@
       }
     }
 
+    function updatePigBallBoss(enemy, dt, player) {
+      enemy.phaseTimer -= dt;
+      if (enemy.phase === "windup") {
+        enemy.y = Math.min(enemy.y + 160 * dt, 138);
+        enemy.x = clamp(player.x + Math.sin(enemy.phaseTimer * 8) * 16, roadMinX(enemy.width), roadMaxX(enemy.width));
+        enemy.chargeWarning = Math.max(0, enemy.phaseTimer);
+        if (enemy.phaseTimer <= 0) {
+          enemy.phase = "charge";
+          enemy.phaseTimer = 1.45;
+          enemy.chargeWarning = 0;
+          enemy.speed = -360;
+          state.rumble = 10;
+        }
+      } else if (enemy.phase === "charge") {
+        enemy.y += 640 * dt;
+        enemy.vx = 0;
+        if (enemy.y > canvas.height + enemy.height) {
+          enemy.phase = "return";
+          enemy.phaseTimer = 0.9;
+          enemy.y = -enemy.height;
+          enemy.x = clamp(player.x, roadMinX(enemy.width), roadMaxX(enemy.width));
+        }
+      } else {
+        enemy.y += 300 * dt;
+        if (enemy.y >= 138 || enemy.phaseTimer <= 0) {
+          enemy.y = Math.min(enemy.y, 138);
+          enemy.phase = "windup";
+          enemy.phaseTimer = 1.2;
+          enemy.chargeWarning = 1.2;
+          ui.notice.textContent = "Pig-head ball is lining up a charge.";
+        }
+      }
+    }
+
     function updateBoss(enemy, dt, player) {
       enemy.phaseTimer -= dt;
       if (enemy.phase !== "slam") {
@@ -2367,11 +2474,13 @@
           if (b.life <= 0) continue;
           for (const racer of state.racers) {
             if (!racer.dead && racer.y > -120 && racer.y < canvas.height + 120 && rectCircleHit(racer, b)) {
-              racer.hp -= b.damage;
               racer.disabled = Math.max(racer.disabled, 0.55);
-              if (racer.hp <= 0) killRacer(racer, false);
+              if (state.player.driverKillUnlocked) {
+                racer.hp -= b.damage;
+                if (racer.hp <= 0) killRacer(racer, false);
+              }
               b.life = 0;
-              addHit(racer.x, racer.y, "#ffc247");
+              addHit(racer.x, racer.y, state.player.driverKillUnlocked ? "#ffc247" : "#4fd3d7");
               break;
             }
           }
@@ -2564,7 +2673,21 @@
       state.finishFlash = 1;
       state.upgradePicks = place === 1 ? 3 : place === 2 ? 2 : 1;
       state.score += Math.max(0, state.race) * 500 + Math.ceil(state.player.hp) * 4;
+      if (state.endlessMode) {
+        state.endlessBossesDefeated += 1;
+        state.race = state.endlessBossesDefeated;
+        state.score += state.endlessBossesDefeated * 650;
+      }
       recordHighScore();
+      if (state.endlessMode) {
+        state.player.hp = Math.min(state.player.maxHp, state.player.hp + 20 + state.raceKills * 2);
+        ui.garageTitle.textContent = "Infinite Boss " + state.endlessBossesDefeated + " Cleared";
+        ui.garageCopy.textContent = "Bosses defeated: " + state.endlessBossesDefeated + ". Pick upgrades before the next boss gets tougher.";
+        ui.garageStats.textContent = "Upgrade picks: " + state.upgradePicks + " | Score: " + state.score + " | High score: " + state.highScore + " | Hull: " + Math.ceil(state.player.hp) + "/" + state.player.maxHp;
+        renderUpgradeChoices();
+        ui.garageOverlay.classList.remove("hidden");
+        return;
+      }
       if (state.race >= levelRoute.length) {
         startBlackoutWin(place);
         return;
@@ -2588,7 +2711,9 @@
       state.lastPlace = null;
       recordHighScore();
       ui.gameOverTitle.textContent = "Run Ended";
-      ui.gameOverCopy.textContent = (reason ? reason + " " : "") + "You reached race " + state.race + ", destroyed " + state.totalKills + " enemies, scored " + state.score + ", and banked " + state.scrap + " scrap before the road claimed your rig.";
+      ui.gameOverCopy.textContent = state.endlessMode
+        ? (reason ? reason + " " : "") + "You defeated " + state.endlessBossesDefeated + " infinite bosses, scored " + state.score + ", destroyed " + state.totalKills + " enemies, and banked " + state.scrap + " scrap before the road claimed your rig."
+        : (reason ? reason + " " : "") + "You reached race " + state.race + ", destroyed " + state.totalKills + " enemies, scored " + state.score + ", and banked " + state.scrap + " scrap before the road claimed your rig.";
       ui.gameOverOverlay.classList.remove("hidden");
     }
 
@@ -2596,6 +2721,7 @@
       state.mode = "won";
       state.lastPlace = place;
       recordHighScore();
+      stopMusic();
       ui.gameOverTitle.textContent = "You Win";
       ui.gameOverCopy.textContent = "You cleared all " + levelRoute.length + " levels, survived the water-slide finale, conquered the racetrack boss rush, scored " + state.score + ", destroyed " + state.totalKills + " enemies, and drove out with " + state.scrap + " scrap.";
       ui.gameOverOverlay.classList.remove("hidden");
@@ -2633,7 +2759,8 @@
     function renderUpgradeChoices() {
       ui.upgradeGrid.innerHTML = "";
       const available = upgradePool.filter((upgrade) => !state.chosenUpgrades.has(upgrade.name));
-      const options = [...available].sort(() => Math.random() - 0.5).slice(0, Math.min(3, available.length));
+      const source = available.length || !state.endlessMode ? available : upgradePool;
+      const options = [...source].sort(() => Math.random() - 0.5).slice(0, Math.min(3, source.length));
       options.forEach((upgrade) => {
         const card = document.createElement("div");
         card.className = "upgrade";
@@ -2816,8 +2943,8 @@
           ctx.ellipse(x, camera.horizon + 46 + (i % 3) * 12, 150, 38, 0, 0, Math.PI * 2);
           ctx.fill();
         }
-      } else if (state?.trackTheme === "cave") {
-        ctx.fillStyle = "rgba(191,239,255,0.12)";
+      } else if (state?.trackTheme === "cave" || state?.trackTheme === "redcave") {
+        ctx.fillStyle = state?.trackTheme === "redcave" ? "rgba(255,83,74,0.15)" : "rgba(191,239,255,0.12)";
         for (let i = 0; i < 12; i++) {
           const x = (i * 117 + distance * 0.03) % canvas.width;
           ctx.beginPath();
@@ -2897,6 +3024,19 @@
           edge: "#8f7cff",
           dirt: "#333036",
           detail: "rgba(191,239,255,0.12)"
+        },
+        redcave: {
+          skyTop: "#0b0505",
+          skyMid: "#261012",
+          ground: "#342225",
+          horizon: "#0b0404",
+          glow: "rgba(255, 83, 74, 0.18)",
+          roadA: "#201b1d",
+          roadB: "#2c2225",
+          roadCenter: "rgba(96, 52, 56, 0.58)",
+          edge: "#bd3e36",
+          dirt: "#3d2428",
+          detail: "rgba(255,154,168,0.14)"
         },
         waterslide: {
           skyTop: "#06354a",
@@ -2987,8 +3127,8 @@
           ctx.ellipse(-18, -22, 22, 7, -0.6, 0, Math.PI * 2);
           ctx.ellipse(18, -18, 18, 6, 0.5, 0, Math.PI * 2);
           ctx.fill();
-        } else if (state?.trackTheme === "cave") {
-          ctx.fillStyle = "rgba(191,239,255,0.12)";
+        } else if (state?.trackTheme === "cave" || state?.trackTheme === "redcave") {
+          ctx.fillStyle = state?.trackTheme === "redcave" ? "rgba(255,83,74,0.16)" : "rgba(191,239,255,0.12)";
           ctx.beginPath();
           ctx.moveTo(-9, -24);
           ctx.lineTo(0, -2);
@@ -3045,6 +3185,8 @@
         drawHedgehogBoss(enemy);
       } else if (enemy.kind === "rushUnicorn" || enemy.kind === "rushRedTow" || enemy.kind === "rushPigTow") {
         drawRushRacerBoss(enemy);
+      } else if (enemy.kind === "pigBall") {
+        drawPigBallBoss(enemy);
       } else if (enemy.kind === "manatee") {
         drawManatee(enemy);
       } else if (enemy.kind === "piranha") {
@@ -3055,6 +3197,7 @@
         drawCar(enemy.x, enemy.y, enemy.width, enemy.height, enemy.color, "#211411", false);
       }
       if (enemy.phase === "windup") drawSlamWarning(enemy);
+      if (enemy.kind === "pigBall" && enemy.phase === "windup") drawChargeWarning(enemy);
       if (enemy.kind !== "hedgehog") {
         const pct = clamp(enemy.hp / enemy.maxHp, 0, 1);
         drawHealthBar(enemy.x, enemy.y - enemy.height / 2 - 13, isBossEnemy(enemy) ? 132 : 52, pct, isMonster(enemy) ? "#8ae05f" : enemy.kind === "kangaroo" || enemy.kind === "boss" || enemy.kind === "rushUnicorn" ? "#ffcf5b" : enemy.kind === "ape" || enemy.kind === "manateeBoss" || enemy.kind === "rushPigTow" ? "#bfefff" : "#ff665a");
@@ -3355,6 +3498,58 @@
       ctx.fillRect(14, 45, 18, 18);
       ctx.fillStyle = "#15191a";
       ctx.fillRect(-14, -65, 28, 18);
+      ctx.restore();
+    }
+
+    function drawPigBallBoss(enemy) {
+      const p = projectPoint(enemy.x, enemy.y);
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.scale(p.scale, p.scale);
+      ctx.rotate((performance.now() * 0.004) % (Math.PI * 2));
+      ctx.fillStyle = "rgba(0,0,0,0.34)";
+      ctx.beginPath();
+      ctx.ellipse(8, 56, 78, 24, 0, 0, Math.PI * 2);
+      ctx.fill();
+      const heads = [
+        [0, 0, 36], [-36, -18, 27], [36, -18, 27], [-32, 28, 28], [32, 28, 28], [0, -42, 25], [0, 42, 25]
+      ];
+      for (const [x, y, r] of heads) {
+        ctx.fillStyle = "#ff9aa8";
+        ctx.beginPath();
+        ctx.ellipse(x, y, r, r * 0.82, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#ffb6bd";
+        ctx.beginPath();
+        ctx.ellipse(x, y + r * 0.1, r * 0.42, r * 0.26, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#1a1110";
+        ctx.fillRect(x - r * 0.35, y - r * 0.25, 4, 4);
+        ctx.fillRect(x + r * 0.22, y - r * 0.25, 4, 4);
+        ctx.fillStyle = "#7c3f24";
+        ctx.fillRect(x - r * 0.16, y + r * 0.05, r * 0.32, 5);
+      }
+      ctx.strokeStyle = "#bd3e36";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(0, 0, 66, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawChargeWarning(enemy) {
+      const top = projectPoint(enemy.x, enemy.y + 36);
+      const bottom = projectPoint(enemy.x, canvas.height - 30);
+      ctx.save();
+      ctx.globalAlpha = 0.25 + Math.sin(performance.now() * 0.05) * 0.18;
+      ctx.strokeStyle = "#ff534a";
+      ctx.lineWidth = 7;
+      ctx.setLineDash([18, 12]);
+      ctx.beginPath();
+      ctx.moveTo(top.x, top.y);
+      ctx.lineTo(bottom.x, bottom.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
       ctx.restore();
     }
 
@@ -4075,6 +4270,7 @@
     }
 
     function startMusic() {
+      if (state && state.mode === "won") return;
       if (!musicEnabled || audio || !window.AudioContext && !window.webkitAudioContext) return;
       const AudioCtor = window.AudioContext || window.webkitAudioContext;
       const context = new AudioCtor();
@@ -4109,29 +4305,19 @@
       const destination = audio?.master || context.destination;
       const now = context.currentTime;
       const osc = context.createOscillator();
-      const grind = context.createOscillator();
       const gain = context.createGain();
-      const filter = context.createBiquadFilter();
-      osc.type = "sawtooth";
-      grind.type = "square";
-      osc.frequency.setValueAtTime(1800, now);
-      osc.frequency.exponentialRampToValueAtTime(260, now + 1.2);
-      grind.frequency.setValueAtTime(93, now);
-      filter.type = "bandpass";
-      filter.frequency.setValueAtTime(2200, now);
-      filter.frequency.exponentialRampToValueAtTime(480, now + 1.25);
-      filter.Q.value = 9;
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(2350, now);
+      osc.frequency.setValueAtTime(2450, now + 0.55);
+      osc.frequency.setValueAtTime(2320, now + 1.15);
       gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.28, now + 0.04);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.35);
-      osc.connect(filter);
-      grind.connect(filter);
-      filter.connect(gain);
+      gain.gain.exponentialRampToValueAtTime(0.42, now + 0.04);
+      gain.gain.setValueAtTime(0.42, now + 1.35);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.62);
+      osc.connect(gain);
       gain.connect(destination);
       osc.start(now);
-      grind.start(now);
-      osc.stop(now + 1.45);
-      grind.stop(now + 1.45);
+      osc.stop(now + 1.7);
     }
 
     function playMusicStep() {
@@ -4201,8 +4387,17 @@
       if (state.mode === "won") return "first";
       if (state.mode === "over") return "gameover";
       if (state.mode === "garage") return state.lastPlace === 1 ? "first" : "garage";
-      if (state.bossRace && !state.bossDefeated) return "boss-" + state.bossKind;
+      if (state.bossRace && !state.bossDefeated) return "boss-" + getBossMusicKey();
       return "race";
+    }
+
+    function getBossMusicKey() {
+      if (!state) return "car";
+      if (state.bossKind === "boss") return "car";
+      if (state.bossKind === "rushUnicorn") return "hedgehog";
+      if (state.bossKind === "rushRedTow") return "car";
+      if (state.bossKind === "rushPigTow") return "manateeBoss";
+      return state.bossKind;
     }
 
     function getMusicTheme(mode, lap) {
@@ -4366,6 +4561,22 @@
           snareGain: 0.115,
           hatGain: 0.07,
           hats: true
+        },
+        "boss-pigBall": {
+          bass: [61.74, 61.74, 82.41, 61.74, 73.42, 98, 73.42, 55],
+          lead: [246.94, 0, 293.66, 329.63, 0, 293.66, 246.94, 0, 369.99, 329.63, 293.66, 246.94, 0, 220, 246.94, 0],
+          chords: [123.47, 164.81, 146.83, 110],
+          sparkle: [493.88, 587.33, 659.25, 587.33],
+          leadWave: "sawtooth",
+          urgency: 1.34,
+          bassGain: 0.33,
+          subGain: 0.09,
+          chordGain: 0.055,
+          leadGain: 0.12,
+          kickGain: 0.13,
+          snareGain: 0.095,
+          hatGain: 0.055,
+          hats: true
         }
       };
       if (mode !== "race") return themes[mode];
@@ -4432,7 +4643,7 @@
       ui.shieldFill.style.width = p.maxShield > 0 ? clamp(p.shield / p.maxShield * 100, 0, 100) + "%" : "0%";
       ui.boostFill.style.width = clamp(p.boost / p.maxBoost * 100, 0, 100) + "%";
       ui.weaponText.textContent = "Weapon: " + p.weapon;
-      ui.raceText.textContent = state.race === 0 ? "Practice" : "Race " + state.race;
+      ui.raceText.textContent = state.endlessMode ? "Infinite " + (state.endlessBossesDefeated + 1) : state.race === 0 ? "Practice" : "Race " + state.race;
       const lap = Math.min(3, Math.floor(state.distance / state.lapLength) + 1);
       if (state.bossKind === "hedgehog") {
         ui.heatText.textContent = "Survive";
@@ -4448,7 +4659,7 @@
       const board = loadHighScoreBoard();
       ui.highScoreText.textContent = "High score: " + state.highScore + (board.length ? " | Board: " + board.join(" / ") : "");
       ui.scoreFill.style.width = clamp(state.score / Math.max(1, state.highScore) * 100, 0, 100) + "%";
-      ui.objectiveText.textContent = state.bossKind === "hedgehog" ? "Survive " + Math.ceil(state.survivalTimer) + "s" : state.bossRace ? "Boss level | " + Math.ceil(Math.max(0, state.raceLength - state.distance)) + "m" : "Place " + getPlayerPlace() + " | " + Math.ceil(Math.max(0, state.raceLength - state.distance)) + "m";
+      ui.objectiveText.textContent = state.endlessMode ? "Bosses beaten: " + state.endlessBossesDefeated : state.bossKind === "hedgehog" ? "Survive " + Math.ceil(state.survivalTimer) + "s" : state.bossRace ? "Boss level | " + Math.ceil(Math.max(0, state.raceLength - state.distance)) + "m" : "Place " + getPlayerPlace() + " | " + Math.ceil(Math.max(0, state.raceLength - state.distance)) + "m";
     }
 
     function rectHit(a, b) {
@@ -4500,16 +4711,19 @@
     window.addEventListener("blur", () => keys.clear());
 
     document.getElementById("startBtn").addEventListener("click", () => {
-      if (musicEnabled) startMusic();
       newRun(false);
+      if (musicEnabled) startMusic();
+    });
+    document.getElementById("endlessBtn").addEventListener("click", () => {
+      newRun(false, true);
+      if (musicEnabled) startMusic();
     });
     document.getElementById("demoBtn").addEventListener("click", () => {
-      if (musicEnabled) startMusic();
       newRun(true);
+      if (musicEnabled) startMusic();
     });
     document.getElementById("restartBtn").addEventListener("click", () => {
-      if (musicEnabled) startMusic();
-      newRun(false);
+      returnToTitle();
     });
     ui.musicBtn.addEventListener("click", () => {
       musicEnabled = !musicEnabled;
