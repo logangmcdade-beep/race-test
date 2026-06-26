@@ -633,11 +633,11 @@
       { theme: "cave", boss: false, name: "Cave" },
       { theme: "cave", boss: true, bossKind: "manateeBoss", name: "Manatee Boss" },
       { theme: "desert", boss: false, name: "Desert" },
-      { theme: "desert", boss: true, bossKind: "kangaroo", name: "Kangaroo Boss" },
+      { theme: "desert", boss: true, bossKind: "kangaroo", name: "Prison Pouch" },
       { theme: "jungle", boss: false, name: "Jungle" },
-      { theme: "jungle", boss: true, bossKind: "ape", name: "White Ape Boss" },
+      { theme: "jungle", boss: true, bossKind: "ape", name: "The Cannibal Ginger" },
       { theme: "waterslide", boss: false, name: "Water Slide" },
-      { theme: "waterslide", boss: true, bossKind: "hedgehog", name: "Hedgehog Survival", survive: 60 },
+      { theme: "waterslide", boss: true, bossKind: "hedgehog", name: "Satan", survive: 60 },
       { theme: "racetrack", boss: true, bossKind: "bossRush", name: "Boss Rush" },
       { theme: "darkcave", boss: true, bossKind: "centipede", name: "Scholopendra" }
     ];
@@ -1155,7 +1155,7 @@
       applyLevelConfig(true);
       resetRacers();
       hideAllOverlays();
-      ui.notice.textContent = getLevelNotice();
+      setNotice(getLevelNotice());
     }
 
     function hideAllOverlays() {
@@ -1173,7 +1173,7 @@
       ui.garageOverlay.classList.add("hidden");
       ui.gameOverOverlay.classList.add("hidden");
       ui.startOverlay.classList.remove("hidden");
-      ui.notice.textContent = "Acceleration is automatic. P1: A/D steer, S slows, Shift fires. P2: arrows steer, Up fires.";
+      setNotice("Acceleration is automatic. P1: A/D steer, S slows, Shift fires. P2: arrows steer, Up fires.");
     }
 
     function startNextRace() {
@@ -1231,7 +1231,7 @@
       resetRacers();
       hideAllOverlays();
       state.mode = "race";
-      ui.notice.textContent = getLevelNotice();
+      setNotice(getLevelNotice());
     }
 
     function getLevelConfig() {
@@ -1289,14 +1289,20 @@
       else state.endlessRecentBosses.push({ kind, rounds: 2 });
     }
 
+    function setNotice(text) {
+      const message = String(text);
+      const prefix = state && state.mode === "race" && state.bossKind === "hedgehog" && !message.startsWith("PIP PIP!") ? "PIP PIP! " : "";
+      ui.notice.textContent = prefix + message;
+    }
+
     function getLevelNotice() {
       const level = getLevelConfig();
       if (state.bossRace) {
         if (state.endlessMode) return "Infinite Boss " + (state.endlessBossesDefeated + 1) + ": destroy the boss, then choose an upgrade.";
-        if (state.bossKind === "ape") return "Level " + state.race + ": white ape boss. Dodge staff beams and end the rally.";
+        if (state.bossKind === "ape") return "Level " + state.race + ": The Cannibal Ginger. Dodge staff beams and end the rally.";
         if (state.bossKind === "manateeBoss") return "Level " + state.race + ": manatee boss. It hides in water and fires water bursts.";
-        if (state.bossKind === "kangaroo") return "Level " + state.race + ": kangaroo boss. Watch the arm swipe and pouch shake.";
-        if (state.bossKind === "hedgehog") return "Level " + state.race + ": hedgehog survival. Dodge the triple shots for 60 seconds.";
+        if (state.bossKind === "kangaroo") return "Level " + state.race + ": Prison Pouch. Watch the arm swipe and pouch shake.";
+        if (state.bossKind === "hedgehog") return "Level " + state.race + ": Satan. Dodge the triple shots for 60 seconds.";
         if (state.bossKind === "bossRush") return "Level " + state.race + ": boss rush. No racers, just you and five huge rival machines.";
         if (state.bossKind === "centipede") return "Level " + state.race + ": Scholopendra finale. Survive the dark-cave spray.";
         return "Level " + state.race + ": car boss on the racetrack.";
@@ -1401,7 +1407,7 @@
         p.y = 650;
         p.x = clamp(p.pouchReturnX || p.x, roadMinX(p.width), roadMaxX(p.width));
         p.pouchCooldown = 1.4;
-        ui.notice.textContent = p.captureReleaseText || "The rider has become a joey, then escaped the pouch.";
+        setNotice(p.captureReleaseText || "The rider has become a joey, then escaped the pouch.");
         p.captureReleaseText = "";
       }
     }
@@ -1584,7 +1590,7 @@
           scoreValue: 2800 + state.endlessBossesDefeated * 240,
           scrapValue: 84 + state.endlessBossesDefeated * 5
         });
-        ui.notice.textContent = "Infinite boss: a ball of pig heads is charging.";
+        setNotice("Infinite boss: a ball of pig heads is charging.");
         return;
       }
       if (state.bossKind === "centipede") {
@@ -1610,7 +1616,7 @@
           scoreValue: 3600 + state.race * 220,
           scrapValue: 96 + state.race * 5
         });
-        ui.notice.textContent = "Final boss: Scholopendra floods the dark cave.";
+        setNotice("Final boss: Scholopendra floods the dark cave.");
         return;
       }
       if (state.bossKind === "ape") {
@@ -1634,7 +1640,7 @@
           scoreValue: 2200 + state.race * 180,
           scrapValue: 64 + state.race * 4
         });
-        ui.notice.textContent = "White-haired ape boss: dodge the staff beams.";
+        setNotice("The Cannibal Ginger: dodge the staff beams.");
         return;
       }
       if (state.bossKind === "manateeBoss") {
@@ -1659,7 +1665,7 @@
           scoreValue: 2200 + state.race * 180,
           scrapValue: 64 + state.race * 4
         });
-        ui.notice.textContent = "Manatee boss: it hides in water, then sprays the road.";
+        setNotice("Manatee boss: it hides in water, then sprays the road.");
         return;
       }
       if (state.bossKind === "kangaroo") {
@@ -1686,7 +1692,7 @@
           scoreValue: 2000 + state.race * 170,
           scrapValue: 60 + state.race * 4
         });
-        ui.notice.textContent = "Kangaroo boss: one joey bomb at a time, and its pouch turns riders into joeys.";
+        setNotice("Prison Pouch: one joey bomb at a time, and its pouch turns riders into joeys.");
         return;
       }
       if (state.bossKind === "hedgehog") {
@@ -1711,7 +1717,7 @@
           scoreValue: 0,
           scrapValue: 0
         });
-        ui.notice.textContent = "Hedgehog boss: it cannot be destroyed. Survive the triple shots for 60 seconds.";
+        setNotice("Satan cannot be destroyed. Survive the triple shots for 60 seconds.");
         return;
       }
       state.enemies.push({
@@ -1735,7 +1741,7 @@
         scoreValue: 1800 + state.race * 160,
         scrapValue: 55 + state.race * 4
       });
-      ui.notice.textContent = "Boss incoming: watch for the ground-pound charge.";
+      setNotice("Boss incoming: watch for the ground-pound charge.");
     }
 
     function addBossRushEnemy(kind, heat, hp) {
@@ -1763,7 +1769,7 @@
           damage: 24 + heat * 3,
           color: "#c99a4a"
         });
-        ui.notice.textContent = "Boss rush 1/5: giant Tumblecorn fires triple horn shots.";
+        setNotice("Boss rush 1/5: giant Tumblecorn fires triple horn shots.");
       } else if (kind === "rushRedTow") {
         state.enemies.push({
           ...base,
@@ -1776,7 +1782,7 @@
           hookWarning: 0,
           color: "#ff2e24"
         });
-        ui.notice.textContent = "Boss rush 2/5: Red Hook throws bombs and fires a tow cable.";
+        setNotice("Boss rush 2/5: Red Hook throws bombs and fires a tow cable.");
       } else if (kind === "rushPigTow") {
         state.enemies.push({
           ...base,
@@ -1789,7 +1795,7 @@
           hideTimer: 0,
           color: "#d98332"
         });
-        ui.notice.textContent = "Boss rush 3/5: Piggyback Tow hides like the manatee boss.";
+        setNotice("Boss rush 3/5: Piggyback Tow hides like the manatee boss.");
       } else if (kind === "rushBear") {
         state.enemies.push({
           ...base,
@@ -1801,7 +1807,7 @@
           phaseTimer: 2.4,
           color: "#1b1716"
         });
-        ui.notice.textContent = "Boss rush 4/5: Black Bear throws rings of ninja stars.";
+        setNotice("Boss rush 4/5: Black Bear throws rings of ninja stars.");
       } else {
         state.enemies.push({
           ...base,
@@ -1813,7 +1819,7 @@
           phaseTimer: 2.6,
           color: "#e8dfc6"
         });
-        ui.notice.textContent = "Boss rush 5/5: RV hurls soda cans across the track.";
+        setNotice("Boss rush 5/5: RV hurls soda cans across the track.");
       }
     }
 
@@ -1863,7 +1869,7 @@
       state.rumble = 10;
       addExplosion(boss.x, boss.y + 12, "#ff534a", 24);
       addHit(boss.x, boss.y, "#ff534a");
-      ui.notice.textContent = "Red booster rammed power into the boss.";
+      setNotice("Red booster rammed power into the boss.");
       return true;
     }
 
@@ -2130,9 +2136,9 @@
       if (state.bossRushIndex >= bossRushOrder.length) {
         state.bossDefeated = true;
         state.distance = state.raceLength;
-        ui.notice.textContent = "Boss rush cleared.";
+        setNotice("Boss rush cleared.");
       } else {
-        ui.notice.textContent = "Boss rush enemy " + (state.bossRushIndex + 1) + "/" + bossRushOrder.length + " rolling in.";
+        setNotice("Boss rush enemy " + (state.bossRushIndex + 1) + "/" + bossRushOrder.length + " rolling in.");
       }
     }
 
@@ -2174,7 +2180,7 @@
           enemy.phase = "surface";
           enemy.phaseTimer = 3.4;
           enemy.fireTimer = 0.35;
-          ui.notice.textContent = "Manatee boss surfaced.";
+          setNotice("Manatee boss surfaced.");
         }
         return;
       }
@@ -2199,7 +2205,7 @@
         enemy.phaseTimer = 2.2;
         enemy.hideTimer = 2.2;
         enemy.fireTimer = 999;
-        ui.notice.textContent = "Manatee boss dove underwater. Its hide is defended.";
+        setNotice("Manatee boss dove underwater. Its hide is defended.");
       }
     }
 
@@ -2228,7 +2234,7 @@
           enemy.phase = "spray";
           enemy.phaseTimer = 3.4;
           enemy.fireTimer = 0.5;
-          ui.notice.textContent = "Scholopendra rises for another volley.";
+          setNotice("Scholopendra rises for another volley.");
         }
       } else {
         enemy.y = Math.min(enemy.y + 150 * dt, 146);
@@ -2246,7 +2252,7 @@
           enemy.phaseTimer = 1.4;
           enemy.ramWarning = 0;
           enemy.speed = 620;
-          ui.notice.textContent = "Scholopendra lunges down the lane.";
+          setNotice("Scholopendra lunges down the lane.");
         }
         if (enemy.phase === "ram" || enemy.phase === "return") return;
       }
@@ -2275,12 +2281,12 @@
           enemy.ramWarning = 1.45;
           enemy.fireTimer = 0.7;
           enemy.speed = 0;
-          ui.notice.textContent = "Scholopendra lines up a ramming charge.";
+          setNotice("Scholopendra lines up a ramming charge.");
           return;
         }
         enemy.phaseTimer = 5.2;
         enemy.fireTimer = 0.6;
-        ui.notice.textContent = "Scholopendra coils for another spray.";
+        setNotice("Scholopendra coils for another spray.");
       }
     }
 
@@ -2297,7 +2303,7 @@
       enemy.speed = 0;
       state.rumble = Math.max(state.rumble, 18);
       addExplosion(enemy.x, enemy.y, "#d08a43", 42);
-      ui.notice.textContent = "Scholopendra molts. Phase two begins.";
+      setNotice("Scholopendra molts. Phase two begins.");
     }
 
     function triggerScholopendraThirdPhase(enemy) {
@@ -2314,7 +2320,7 @@
       enemy.speed = 0;
       state.rumble = Math.max(state.rumble, 24);
       addExplosion(enemy.x, enemy.y, "#ffdf8b", 56);
-      ui.notice.textContent = "Scholopendra splits into phase three. Homing bombs are live.";
+      setNotice("Scholopendra splits into phase three. Homing bombs are live.");
     }
 
     function fireCentipedeBomb(enemy, player) {
@@ -2414,7 +2420,7 @@
       if (enemy.hookTimer <= 0) {
         enemy.hookTimer = 4.1;
         enemy.hookWarning = 0.9;
-        ui.notice.textContent = "Red Hook is firing its tow cable.";
+        setNotice("Red Hook is firing its tow cable.");
       }
       if (enemy.hookWarning > 0 && enemy.hookWarning < 0.28 && player.pouchedTimer <= 0 && player.pouchCooldown <= 0 && Math.abs(player.x - enemy.x) < 145 && player.y > enemy.y) {
         capturePlayerWithHook(enemy);
@@ -2432,7 +2438,7 @@
           enemy.phase = "surface";
           enemy.phaseTimer = 3.4;
           enemy.fireTimer = 0.35;
-          ui.notice.textContent = "Piggyback Tow surfaced. The pig is back in the truck.";
+          setNotice("Piggyback Tow surfaced. The pig is back in the truck.");
         }
         return;
       }
@@ -2457,7 +2463,7 @@
         enemy.phaseTimer = 2.25;
         enemy.hideTimer = 2.25;
         enemy.fireTimer = 999;
-        ui.notice.textContent = "Piggyback Tow is hiding. The pig disappeared.";
+        setNotice("Piggyback Tow is hiding. The pig disappeared.");
       }
     }
 
@@ -2491,7 +2497,7 @@
       if (enemy.phaseTimer <= 0) {
         enemy.phaseTimer = 2.7;
         enemy.fireTimer = 0.18;
-        ui.notice.textContent = "Black Bear scatters ninja stars.";
+        setNotice("Black Bear scatters ninja stars.");
       }
     }
 
@@ -2522,7 +2528,7 @@
       if (enemy.phaseTimer <= 0) {
         enemy.phaseTimer = 2.9;
         enemy.fireTimer = 0.22;
-        ui.notice.textContent = "RV boss shakes up a soda-can barrage.";
+        setNotice("RV boss shakes up a soda-can barrage.");
       }
     }
 
@@ -2536,7 +2542,7 @@
       damagePlayer(12);
       state.rumble = 9;
       enemy.hookWarning = 0;
-      ui.notice.textContent = "Red Hook snagged your car.";
+      setNotice("Red Hook snagged your car.");
       addHit(enemy.x, enemy.y + 34, "#ff534a");
     }
 
@@ -2622,7 +2628,7 @@
           enemy.phase = "windup";
           enemy.phaseTimer = 2.4;
           enemy.chargeWarning = 2.4;
-          ui.notice.textContent = "Pig-head ball is lining up a charge.";
+          setNotice("Pig-head ball is lining up a charge.");
         }
       }
     }
@@ -2659,7 +2665,7 @@
           enemy.phaseTimer = 0.9;
           enemy.slamWarning = 0.9;
           enemy.vx = 0;
-          ui.notice.textContent = "Boss is bracing for a ground pound.";
+          setNotice("Boss is bracing for a ground pound.");
         }
       } else if (enemy.phase === "windup") {
         enemy.y = Math.min(enemy.y, 150);
@@ -2718,7 +2724,7 @@
       if (enemy.phaseTimer <= 0) {
         enemy.phaseTimer = 4.2;
         enemy.fireTimer = 0.25;
-        ui.notice.textContent = "Ape boss is channeling staff beams.";
+        setNotice("The Cannibal Ginger is channeling staff beams.");
       }
     }
 
@@ -2758,7 +2764,7 @@
           enemy.phaseTimer = 1;
           enemy.pouchTimer = 1;
           enemy.vx = 0;
-          ui.notice.textContent = "Kangaroo pouch warning: move out of the flashing lane.";
+          setNotice("Prison Pouch warning: move out of the flashing lane.");
         }
       } else if (enemy.phase === "pouchWarn") {
         enemy.pouchTimer = Math.max(0, enemy.pouchTimer - dt);
@@ -2767,7 +2773,7 @@
           enemy.phaseTimer = 0.85;
           enemy.pouchTimer = 0.85;
           enemy.pouchShakeTimer = 0.35;
-          ui.notice.textContent = "Kangaroo pouch swipe: rider has become a joey.";
+          setNotice("Prison Pouch swipe: rider has become a joey.");
         }
       } else {
         enemy.pouchTimer = Math.max(0, enemy.pouchTimer - dt);
@@ -2800,7 +2806,7 @@
       damagePlayer(10);
       state.rumble = 8;
       enemy.pouchShakeTimer = 0.65;
-      ui.notice.textContent = "The rider has become a joey.";
+      setNotice("The rider has become a joey.");
       addHit(enemy.x, enemy.y + 20, "#ffc247");
     }
 
@@ -2950,7 +2956,7 @@
           state.score += pickup.value * 18;
           healFromScrap(pickup.value);
           pickup.collected = true;
-          ui.notice.textContent = "+" + pickup.value + " scrap salvaged and patched into hull";
+          setNotice("+" + pickup.value + " scrap salvaged and patched into hull");
         }
       }
       state.pickups = state.pickups.filter((pickup) => !pickup.collected && pickup.y < canvas.height + 80);
@@ -3005,7 +3011,7 @@
           p.padBoost = 1.25;
           p.speed = Math.min(p.maxSpeed + 145, p.speed + 120);
           p.boost = Math.min(p.maxBoost, p.boost + 18);
-          ui.notice.textContent = "Boost arrows hit.";
+          setNotice("Boost arrows hit.");
           addHit(p.x, p.y + 18, "#4fd3d7");
         }
       }
@@ -3120,7 +3126,7 @@
       state.racers.forEach((racer) => {
         racer.distance = Math.min(racer.distance, state.distance - 200);
       });
-      ui.notice.textContent = "Skipped to first-place upgrade.";
+      setNotice("Skipped to first-place upgrade.");
       finishRace();
     }
 
@@ -3147,7 +3153,7 @@
       recordHighScore();
       if (musicEnabled) startMusic();
       ui.gameOverTitle.textContent = "You Win";
-      ui.gameOverCopy.textContent = "You cleared all " + levelRoute.length + " levels, survived the water-slide finale, conquered the racetrack boss rush, defeated Scholopendra, scored " + state.score + ", destroyed " + state.totalKills + " enemies, and drove out with " + state.scrap + " scrap.";
+      ui.gameOverCopy.textContent = "You cleared all " + levelRoute.length + " levels, survived Satan, conquered the racetrack boss rush, defeated Scholopendra, scored " + state.score + ", destroyed " + state.totalKills + " enemies, and drove out with " + state.scrap + " scrap.";
       ui.gameOverOverlay.classList.remove("hidden");
     }
 
@@ -3205,7 +3211,7 @@
           upgrade.apply();
           syncPlayerTwoUpgrades();
           state.upgradePicks -= 1;
-          ui.notice.textContent = upgrade.name + " installed.";
+          setNotice(upgrade.name + " installed.");
           if (state.upgradePicks > 0) {
             ui.garageCopy.textContent = "Upgrade installed. Pick " + state.upgradePicks + " more.";
             ui.garageStats.textContent = "Remaining upgrade picks: " + state.upgradePicks + " | Score: " + state.score + " | High score: " + state.highScore;
@@ -5528,3 +5534,4 @@
   </script>
 </body>
 </html>
+
